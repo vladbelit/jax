@@ -523,6 +523,11 @@ def main():
       default=None,
       help="Path to the ROCm toolkit.")
   parser.add_argument(
+    "--bazel_command_options",
+    action="append", default=[],
+    help="Additional options to pass to the bazel command to be executed, "
+         "e.g. `--config=<bazelrc config name>`, etc.")
+  parser.add_argument(
       "--bazel_startup_options",
       action="append", default=[],
       help="Additional startup options to pass to bazel.")
@@ -666,13 +671,21 @@ def main():
 
   print("\nBuilding XLA and installing it in the jaxlib source tree...")
 
+  command = [
+    bazel_path,
+    *args.bazel_startup_options,
+    "run",
+    "--verbose_failures=true",
+    * args.bazel_command_options,
+  ]
   if not args.build_cuda_kernel_plugin and not args.build_cuda_pjrt_plugin:
-    command = ([bazel_path] + args.bazel_startup_options +
-      ["run", "--verbose_failures=true"] +
-      ["//jaxlib/tools:build_wheel", "--",
-      f"--output_path={output_path}",
-      f"--jaxlib_git_hash={get_githash()}",
-      f"--cpu={wheel_cpu}"])
+    command = (
+        command.copy() +
+        ["//jaxlib/tools:build_wheel", "--",
+         f"--output_path={output_path}",
+         f"--jaxlib_git_hash={get_githash()}",
+         f"--cpu={wheel_cpu}"]
+    )
     if args.build_gpu_plugin:
       command.append("--skip_gpu_kernels")
     if args.editable:
@@ -681,26 +694,28 @@ def main():
     shell(command)
 
   if args.build_gpu_plugin or args.build_cuda_kernel_plugin:
-    build_cuda_kernels_command = ([bazel_path] + args.bazel_startup_options +
-      ["run", "--verbose_failures=true"] +
-      ["//jaxlib/tools:build_cuda_kernels_wheel", "--",
-      f"--output_path={output_path}",
-      f"--jaxlib_git_hash={get_githash()}",
-      f"--cpu={wheel_cpu}",
-      f"--cuda_version={args.gpu_plugin_cuda_version}"])
+    build_cuda_kernels_command = (
+        command.copy() +
+        ["//jaxlib/tools:build_cuda_kernels_wheel", "--",
+         f"--output_path={output_path}",
+         f"--jaxlib_git_hash={get_githash()}",
+         f"--cpu={wheel_cpu}",
+         f"--cuda_version={args.gpu_plugin_cuda_version}"]
+    )
     if args.editable:
       build_cuda_kernels_command.append("--editable")
     print(" ".join(build_cuda_kernels_command))
     shell(build_cuda_kernels_command)
 
   if args.build_gpu_plugin or args.build_cuda_pjrt_plugin:
-    build_pjrt_plugin_command = ([bazel_path] + args.bazel_startup_options +
-      ["run", "--verbose_failures=true"] +
-      ["//jaxlib/tools:build_gpu_plugin_wheel", "--",
-      f"--output_path={output_path}",
-      f"--jaxlib_git_hash={get_githash()}",
-      f"--cpu={wheel_cpu}",
-      f"--cuda_version={args.gpu_plugin_cuda_version}"])
+    build_pjrt_plugin_command = (
+        command.copy() +
+        ["//jaxlib/tools:build_gpu_plugin_wheel", "--",
+         f"--output_path={output_path}",
+         f"--jaxlib_git_hash={get_githash()}",
+         f"--cpu={wheel_cpu}",
+         f"--cuda_version={args.gpu_plugin_cuda_version}"]
+    )
     if args.editable:
       build_pjrt_plugin_command.append("--editable")
     print(" ".join(build_pjrt_plugin_command))
