@@ -3581,17 +3581,6 @@ def append(
     return concatenate([arr, values], axis=axis)
 
 
-@util.implements(np.delete,
-  lax_description=_dedent("""
-    delete() usually requires the index specification to be static. If the index
-    is an integer array that is guaranteed to contain unique entries, you may
-    specify ``assume_unique_indices=True`` to perform the operation in a
-    manner that does not require static indices."""),
-  extra_params=_dedent("""
-    assume_unique_indices : int, optional (default=False)
-        In case of array-like integer (not boolean) indices, assume the indices are unique,
-        and perform the deletion in a way that is compatible with JIT and other JAX
-        transformations."""))
 def delete(
     arr: ArrayLike,
     obj: ArrayLike | slice,
@@ -3599,6 +3588,67 @@ def delete(
     *,
     assume_unique_indices: bool = False,
 ) -> Array:
+  """Delete entry or entries from an array.
+
+  JAX implementation of :func:`numpy.delete`.
+
+  Args:
+    arr: array from which entries will be deleted.
+    obj: index, indices, or slice to be deleted.
+    axis: axis along which entries will be deleted.
+    assume_unique_indices: In case of array-like integer (not boolean) indices,
+      assume the indices are unique, and perform the deletion in a way that is
+      compatible with JIT and other JAX transformations.
+
+  Returns:
+    Copy of ``arr`` with specified indices deleted.
+
+  Note:
+    ``delete()`` usually requires the index specification to be static. If the
+    index is an integer array that is guaranteed to contain unique entries, you
+    may specify ``assume_unique_indices=True`` to perform the operation in a
+    manner that does not require static indices.
+
+  Examples:
+    Delete entries from a 1D array:
+
+    >>> a = jnp.array([4, 5, 6, 7, 8, 9])
+    >>> jnp.delete(a, 2)
+    Array([4, 5, 7, 8, 9], dtype=int32)
+    >>> jnp.delete(a, slice(1, 4))  # delete a[1:4]
+    Array([4, 8, 9], dtype=int32)
+    >>> jnp.delete(a, slice(None, None, 2))  # delete a[::2]
+    Array([5, 7, 9], dtype=int32)
+
+    Delete entries from a 2D array along a specified axis:
+
+    >>> a2 = jnp.array([[4, 5, 6],
+    ...                 [7, 8, 9]])
+    >>> jnp.delete(a2, 1, axis=1)
+    Array([[4, 6],
+           [7, 9]], dtype=int32)
+
+    Delete multiple entries via a sequence of indices:
+
+    >>> indices = jnp.array([0, 1, 3])
+    >>> jnp.delete(a, indices)
+    Array([6, 8, 9], dtype=int32)
+
+    This will fail under :func:`~jax.jit` and other transformations, because
+    the output shape cannot be known with the possibility of duplicate indices:
+
+    >>> jax.jit(jnp.delete)(a, indices)  # doctest: +IGNORE_EXCEPTION_DETAIL
+    Traceback (most recent call last):
+      ...
+    ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[3].
+
+    If you can ensure that the indices are unique, pass ``assume_unique_indices``
+    to allow this to be executed under JIT:
+
+    >>> jit_delete = jax.jit(jnp.delete, static_argnames=['assume_unique_indices'])
+    >>> jit_delete(a, indices, assume_unique_indices=True)
+    Array([6, 8, 9], dtype=int32)
+  """
   util.check_arraylike("delete", arr)
   if axis is None:
     arr = ravel(arr)
@@ -3709,8 +3759,7 @@ def insert(arr: ArrayLike, obj: ArrayLike | slice, values: ArrayLike,
 def apply_along_axis(
     func1d: Callable, axis: int, arr: ArrayLike, *args, **kwargs
 ) -> Array:
-  # TODO(jakevdp): Non-array input deprecated 2023-09-22; change to error.
-  util.check_arraylike("apply_along_axis", arr, emit_warning=True)
+  util.check_arraylike("apply_along_axis", arr)
   num_dims = ndim(arr)
   axis = _canonicalize_axis(axis, num_dims)
   func = lambda arr: func1d(arr, *args, **kwargs)
@@ -3724,8 +3773,7 @@ def apply_along_axis(
 @util.implements(np.apply_over_axes)
 def apply_over_axes(func: Callable[[ArrayLike, int], Array], a: ArrayLike,
                     axes: Sequence[int]) -> Array:
-  # TODO(jakevdp): Non-array input deprecated 2023-09-22; change to error.
-  util.check_arraylike("apply_over_axes", a, emit_warning=True)
+  util.check_arraylike("apply_over_axes", a)
   a_arr = asarray(a)
   for axis in axes:
     b = func(a_arr, axis)
@@ -4183,8 +4231,7 @@ def inner(
     a: ArrayLike, b: ArrayLike, *, precision: PrecisionLike = None,
     preferred_element_type: DType | None = None,
 ) -> Array:
-  # TODO(jakevdp): Non-array input deprecated 2023-09-22; change to error.
-  util.check_arraylike("inner", a, b, emit_warning=True)
+  util.check_arraylike("inner", a, b)
   if ndim(a) == 0 or ndim(b) == 0:
     a = asarray(a, dtype=preferred_element_type)
     b = asarray(b, dtype=preferred_element_type)
@@ -4198,8 +4245,7 @@ def inner(
 def outer(a: ArrayLike, b: ArrayLike, out: None = None) -> Array:
   if out is not None:
     raise NotImplementedError("The 'out' argument to jnp.outer is not supported.")
-  # TODO(jakevdp): Non-array input deprecated 2023-09-22; change to error.
-  util.check_arraylike("outer", a, b, emit_warning=True)
+  util.check_arraylike("outer", a, b)
   a, b = util.promote_dtypes(a, b)
   return ravel(a)[:, None] * ravel(b)[None, :]
 
@@ -4208,8 +4254,7 @@ def outer(a: ArrayLike, b: ArrayLike, out: None = None) -> Array:
 def cross(a, b, axisa: int = -1, axisb: int = -1, axisc: int = -1,
           axis: int | None = None):
   # TODO(jakevdp): NumPy 2.0 deprecates 2D inputs. Follow suit here.
-  # TODO(jakevdp): Non-array input deprecated 2023-09-22; change to error.
-  util.check_arraylike("cross", a, b, emit_warning=True)
+  util.check_arraylike("cross", a, b)
   if axis is not None:
     axisa = axis
     axisb = axis
@@ -4236,8 +4281,7 @@ def cross(a, b, axisa: int = -1, axisb: int = -1, axisc: int = -1,
 @util.implements(np.kron)
 @jit
 def kron(a: ArrayLike, b: ArrayLike) -> Array:
-  # TODO(jakevdp): Non-array input deprecated 2023-09-22; change to error.
-  util.check_arraylike("kron", a, b, emit_warning=True)
+  util.check_arraylike("kron", a, b)
   a, b = util.promote_dtypes(a, b)
   if ndim(a) < ndim(b):
     a = expand_dims(a, range(ndim(b) - ndim(a)))
@@ -4480,8 +4524,7 @@ def sort_complex(a: ArrayLike) -> Array:
 @partial(jit, static_argnames=('axis',))
 def lexsort(keys: Array | np.ndarray | Sequence[ArrayLike], axis: int = -1) -> Array:
   key_tuple = tuple(keys)
-  # TODO(jakevdp): Non-array input deprecated 2023-09-22; change to error.
-  util.check_arraylike("lexsort", *key_tuple, emit_warning=True)
+  util.check_arraylike("lexsort", *key_tuple)
   key_arrays = tuple(asarray(k) for k in key_tuple)
   if len(key_arrays) == 0:
     raise TypeError("need sequence of keys with len > 0 in lexsort")
