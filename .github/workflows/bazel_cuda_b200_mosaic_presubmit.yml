@@ -37,9 +37,19 @@ on:
 
 permissions: {}
 
+# For PRs, group by PR number and cancel stale in-progress runs.
+# For workflow_dispatch events, group by actor+ref and cancel stale in-progress
+# runs from the same actor on the same ref.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: ${{ !contains(github.ref, 'release/') && github.ref != 'main' }}
+  group: >-
+    ${{ github.workflow }}-${{
+      github.event_name == 'pull_request'
+      && format('pr-{0}', github.event.pull_request.number)
+      || github.event_name == 'workflow_dispatch'
+      && format('dispatch-{0}-{1}', github.actor, github.ref)
+      || format('ref-{0}', github.ref)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
 
 defaults:
   run:
