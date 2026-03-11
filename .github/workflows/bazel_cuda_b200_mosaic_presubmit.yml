@@ -93,6 +93,8 @@ jobs:
             git_pathspecs+=(":(glob)$pattern")
           done
 
+          cd "${GITHUB_WORKSPACE:?}"
+          # git config --global --add safe.directory "$GITHUB_WORKSPACE"
           matched_files="$(git diff --name-only HEAD^1 HEAD -- "${git_pathspecs[@]}")"
           if [[ -n "$matched_files" ]]; then
             echo 'any_changed=true' >> "$GITHUB_OUTPUT"
