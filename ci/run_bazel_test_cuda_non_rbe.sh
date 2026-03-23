@@ -88,6 +88,47 @@ else
     TEST_STRATEGY=""
 fi
 
+test_output="${JAXCI_TEST_OUTPUT:-errors}"
+skip_multiaccelerator="${JAXCI_SKIP_MULTIACCELERATOR:-0}"
+single_accelerator_targets=(
+  //tests:gpu_tests
+  //tests:backend_independent_tests
+  //tests/pallas:gpu_tests
+  //tests/pallas:backend_independent_tests
+)
+if [[ -n "${JAXCI_BAZEL_TARGETS_OVERRIDE:-}" ]]; then
+  read -r -a single_accelerator_targets <<< "${JAXCI_BAZEL_TARGETS_OVERRIDE}"
+fi
+
+single_accelerator_local_test_jobs="${JAXCI_LOCAL_TEST_JOBS_OVERRIDE:-$num_test_jobs}"
+
+common_bazel_args=(
+  --config=$TEST_CONFIG
+  --repo_env=HERMETIC_PYTHON_VERSION="$JAXCI_HERMETIC_PYTHON_VERSION"
+  --@rules_python//python/config_settings:py_freethreaded="$FREETHREADED_FLAG_VALUE"
+  --repo_env=HERMETIC_CUDA_UMD_VERSION=13.0.2
+  --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB
+  --//jax:build_jax=$JAXCI_BUILD_JAX
+  --test_env=XLA_PYTHON_CLIENT_ALLOCATOR=platform
+  --test_output=$test_output
+  --test_env=TF_CPP_MIN_LOG_LEVEL=0
+  --test_env=JAX_SKIP_SLOW_TESTS=true
+  --action_env=JAX_ENABLE_X64="$JAXCI_ENABLE_X64"
+  --action_env=NCCL_DEBUG=WARN
+  --color=yes
+  --config=cuda_libraries_from_stubs
+  --config=hermetic_cuda_umd
+)
+if [[ -n "$CACHE_OPTION" ]]; then
+  common_bazel_args+=($CACHE_OPTION)
+fi
+if [[ -n "$TEST_STRATEGY" ]]; then
+  common_bazel_args+=($TEST_STRATEGY)
+fi
+if [[ -n "$OVERRIDE_XLA_REPO" ]]; then
+  common_bazel_args+=($OVERRIDE_XLA_REPO)
+fi
+
 # Don't abort the script if one command fails to ensure we run both test
 # commands below.
 set +e
@@ -96,63 +137,33 @@ set +e
 # It appears --run_under needs an absolute path.
 # The product of the `JAX_ACCELERATOR_COUNT`` and `JAX_TESTS_PER_ACCELERATOR`
 # should match the VM's CPU core count (set in `--local_test_jobs`).
-bazel test --config=$TEST_CONFIG \
-      $CACHE_OPTION \
-      --repo_env=HERMETIC_PYTHON_VERSION="$JAXCI_HERMETIC_PYTHON_VERSION" \
-      --@rules_python//python/config_settings:py_freethreaded="$FREETHREADED_FLAG_VALUE" \
-      $OVERRIDE_XLA_REPO \
-      --repo_env=HERMETIC_CUDA_UMD_VERSION=13.0.2 \
-      --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB \
-      --//jax:build_jax=$JAXCI_BUILD_JAX \
-      --test_env=XLA_PYTHON_CLIENT_ALLOCATOR=platform \
+bazel test "${common_bazel_args[@]}" \
       --run_under "$(pwd)/build/parallel_accelerator_execute.sh" \
-      --test_output=errors \
       --test_env=JAX_ACCELERATOR_COUNT=$gpu_count \
       --test_env=JAX_TESTS_PER_ACCELERATOR=$max_tests_per_gpu \
-      $TEST_STRATEGY \
-      --local_test_jobs=$num_test_jobs \
+      --local_test_jobs=$single_accelerator_local_test_jobs \
       --test_env=JAX_EXCLUDE_TEST_TARGETS=PmapTest.testSizeOverflow \
       --test_tag_filters=-multiaccelerator \
-      --test_env=TF_CPP_MIN_LOG_LEVEL=0 \
-      --test_env=JAX_SKIP_SLOW_TESTS=true \
-      --action_env=JAX_ENABLE_X64="$JAXCI_ENABLE_X64" \
-      --action_env=NCCL_DEBUG=WARN \
-      --color=yes \
-      --config=cuda_libraries_from_stubs \
-      --config=hermetic_cuda_umd \
-      //tests:gpu_tests //tests:backend_independent_tests \
-      //tests/pallas:gpu_tests //tests/pallas:backend_independent_tests
+      "${single_accelerator_targets[@]}"
 
 # Store the return value of the first bazel command.
 first_bazel_cmd_retval=$?
 
-echo "Running multi-accelerator tests (without RBE)..."
-# Runs multiaccelerator tests with all GPUs directly on the VM without RBE..
-bazel test --config=$TEST_CONFIG \
-      $CACHE_OPTION \
-      --repo_env=HERMETIC_PYTHON_VERSION="$JAXCI_HERMETIC_PYTHON_VERSION" \
-      --@rules_python//python/config_settings:py_freethreaded="$FREETHREADED_FLAG_VALUE" \
-      --repo_env=HERMETIC_CUDA_UMD_VERSION=13.0.2 \
-      $OVERRIDE_XLA_REPO \
-      --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB \
-      --//jax:build_jax=$JAXCI_BUILD_JAX \
-      --test_env=XLA_PYTHON_CLIENT_ALLOCATOR=platform \
-      --test_output=errors \
-      $TEST_STRATEGY \
-      --local_test_jobs=8 \
-      --test_tag_filters=multiaccelerator \
-      --test_env=TF_CPP_MIN_LOG_LEVEL=0 \
-      --test_env=JAX_SKIP_SLOW_TESTS=true \
-      --action_env=JAX_ENABLE_X64="$JAXCI_ENABLE_X64" \
-      --action_env=NCCL_DEBUG=WARN \
-      --color=yes \
-      --config=cuda_libraries_from_stubs \
-      --config=hermetic_cuda_umd \
-      //tests:gpu_tests //tests/pallas:gpu_tests \
-      //tests/multiprocess:gpu_tests
+if [[ "$skip_multiaccelerator" == "1" ]]; then
+  echo "Skipping multi-accelerator tests due to JAXCI_SKIP_MULTIACCELERATOR=1."
+  second_bazel_cmd_retval=0
+else
+  echo "Running multi-accelerator tests (without RBE)..."
+  # Runs multiaccelerator tests with all GPUs directly on the VM without RBE..
+  bazel test "${common_bazel_args[@]}" \
+        --local_test_jobs=8 \
+        --test_tag_filters=multiaccelerator \
+        //tests:gpu_tests //tests/pallas:gpu_tests \
+        //tests/multiprocess:gpu_tests
 
-# Store the return value of the second bazel command.
-second_bazel_cmd_retval=$?
+  # Store the return value of the second bazel command.
+  second_bazel_cmd_retval=$?
+fi
 
 # Exit with failure if either command fails.
 if [[ $first_bazel_cmd_retval -ne 0 ]]; then

@@ -2019,6 +2019,14 @@ jax_multiplatform_test(
     deps = py_deps("absl/testing"),
 )
 
+jax_multiplatform_test(
+    name = "nightly_wheel_resolution_debug_test",
+    srcs = ["nightly_wheel_resolution_debug_test.py"],
+    enable_backends = ["gpu"],
+    tags = ["manual"],
+    deps = py_deps("absl/testing"),
+)
+
 jax_py_test(
     name = "absl_cpp_logging_test",
     srcs = ["absl_cpp_logging_test.py"],

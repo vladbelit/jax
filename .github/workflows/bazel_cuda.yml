@@ -83,6 +83,26 @@ on:
         description: 'Should this workflow run wait for a remote connection?'
         type: string
         default: 'no'
+      debug-bazel-targets:
+        description: 'Optional whitespace-separated Bazel targets to run instead of the default single-accelerator suites'
+        type: string
+        default: ''
+      debug-skip-multiaccelerator:
+        description: 'Whether to skip the multi-accelerator pass in the non-RBE CUDA script'
+        type: string
+        default: '0'
+      debug-test-output:
+        description: 'Optional Bazel --test_output mode for debug runs'
+        type: string
+        default: ''
+      debug-local-test-jobs:
+        description: 'Optional override for --local_test_jobs in the single-accelerator pass'
+        type: string
+        default: ''
+      debug-dump-python-version-repo-state:
+        description: 'Whether to dump python_version_repo state before and after bazel test'
+        type: string
+        default: '0'
 permissions: {}
 jobs:
   run-tests:
@@ -101,6 +121,10 @@ jobs:
       JAXCI_BUILD_JAX: ${{ inputs.build_jax }}
       JAXCI_BUILD_JAXLIB: ${{ inputs.build_jaxlib }}
       JAXCI_CLONE_MAIN_XLA: ${{ inputs.clone_main_xla }}
+      JAXCI_BAZEL_TARGETS_OVERRIDE: ${{ inputs.debug-bazel-targets }}
+      JAXCI_SKIP_MULTIACCELERATOR: ${{ inputs.debug-skip-multiaccelerator }}
+      JAXCI_TEST_OUTPUT: ${{ inputs.debug-test-output }}
+      JAXCI_LOCAL_TEST_JOBS_OVERRIDE: ${{ inputs.debug-local-test-jobs }}
 # Begin Presubmit Naming Check - name modification requires internal check to be updated
     name: "${{ (contains(inputs.runner, 'linux-x86') && 'linux x86') ||
         (contains(inputs.runner, 'linux-arm64') && 'linux arm64') ||
@@ -125,6 +149,38 @@ jobs:
         uses: google-ml-infra/actions/ci_connection@7f5ca0c263a81ed09ea276524c1b9192f1304e3c
         with:
           halt-dispatch-input: ${{ inputs.halt-for-connection }}
+      - name: Debug python_version_repo state (pre-test)
+        if: inputs.debug-dump-python-version-repo-state == '1'
+        run: |
+          set -euxo pipefail
+
+          hermetic_python_version="${JAXCI_HERMETIC_PYTHON_VERSION}"
+          freethreaded_flag_value='no'
+          if [[ "${hermetic_python_version}" == *"-nogil" ]]; then
+            hermetic_python_version="${hermetic_python_version%-nogil}-ft"
+            freethreaded_flag_value='yes'
+          fi
+
+          override_xla_repo=()
+          if [[ "${JAXCI_CLONE_MAIN_XLA}" == '1' ]]; then
+            override_xla_repo=(--override_repository=xla="${JAXCI_XLA_GIT_DIR}")
+          fi
+
+          mkdir -p .jaxci_debug
+          bazel sync --only=python_version_repo \
+            --repo_env=HERMETIC_PYTHON_VERSION="${hermetic_python_version}" \
+            --@rules_python//python/config_settings:py_freethreaded="${freethreaded_flag_value}" \
+            "${override_xla_repo[@]}"
+          python3 ci/dump_python_version_repo_state.py \
+            --phase pre-test \
+            --snapshot-json .jaxci_debug/python_version_repo_pre_test.json
       - name: "Bazel CUDA tests with build_jax=${{ inputs.build_jax }}, build_jaxlib=${{ inputs.build_jaxlib }}"
         timeout-minutes: 60
         run: ${{ ((inputs.run_multiaccelerator_tests == 'false') && './ci/run_bazel_test_cuda_rbe.sh') || './ci/run_bazel_test_cuda_non_rbe.sh' }}
+      - name: Debug python_version_repo state (post-test)
+        if: always() && inputs.debug-dump-python-version-repo-state == '1'
+        run: |
+          set -euxo pipefail
+          python3 ci/dump_python_version_repo_state.py \
+            --phase post-test \
+            --compare-json .jaxci_debug/python_version_repo_pre_test.json

@@ -37,6 +37,11 @@ on:
         required: false
         default: 'no'
         type: string
+      debug-bazel-cuda-only:
+        description: 'Run only the reduced Bazel CUDA debug jobs'
+        required: false
+        default: '0'
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -48,6 +53,7 @@ env:
 
 jobs:
   run-pytest-cpu:
+    if: ${{ inputs.debug-bazel-cuda-only != '1' }}
     uses: ./.github/workflows/pytest_cpu.yml
     strategy:
         fail-fast: false # don't cancel all jobs on failure
@@ -75,6 +81,7 @@ jobs:
       max-processes: ${{ contains(matrix.runner, 'windows-x86') && '16' || '' }}
 
   run-bazel-test-cpu:
+    if: ${{ inputs.debug-bazel-cuda-only != '1' }}
     uses: ./.github/workflows/bazel_cpu.yml
     strategy:
         fail-fast: false # don't cancel all jobs on failure
@@ -96,6 +103,7 @@ jobs:
       clone_main_xla: 0
 
   run-pytest-cuda:
+    if: ${{ inputs.debug-bazel-cuda-only != '1' }}
     uses: ./.github/workflows/pytest_cuda.yml
     strategy:
         fail-fast: false # don't cancel all jobs on failure
@@ -147,6 +155,7 @@ jobs:
       halt-for-connection: ${{inputs.halt-for-connection}}
 
   run-bazel-test-cuda:
+    if: ${{ inputs.debug-bazel-cuda-only != '1' }}
     uses: ./.github/workflows/bazel_cuda.yml
     strategy:
         fail-fast: false # don't cancel all jobs on failure
@@ -172,7 +181,47 @@ jobs:
       run_multiaccelerator_tests: "true"
       clone_main_xla: 0
 
+  run-bazel-test-cuda-debug:
+    if: ${{ inputs.debug-bazel-cuda-only == '1' }}
+    uses: ./.github/workflows/bazel_cuda.yml
+    strategy:
+        fail-fast: false
+        matrix:
+          include:
+            - runner: "linux-x86-g2-48-l4-4gpu"
+              python: "3.14"
+              cuda-version: 12
+              enable-x64: 0
+            - runner: "linux-x86-g2-48-l4-4gpu"
+              python: "3.14-nogil"
+              cuda-version: 12
+              enable-x64: 0
+            - runner: "linux-x86-g2-48-l4-4gpu"
+              python: "3.14-nogil"
+              cuda-version: 13
+              enable-x64: 0
+    name: "Bazel CUDA Non-RBE debug with ${{ format('{0}', 'build_jaxlib=false') }}"
+    with:
+      runner: ${{ matrix.runner }}
+      python: ${{ matrix.python }}
+      cuda-version: ${{ matrix.cuda-version }}
+      enable-x64: ${{ matrix.enable-x64 }}
+      gcs_download_uri: ${{ inputs.gcs_download_uri }}
+      halt-for-connection: ${{ inputs.halt-for-connection }}
+      build_jaxlib: "false"
+      build_jax: "false"
+      jaxlib-version: "head"
+      write_to_bazel_remote_cache: 1
+      run_multiaccelerator_tests: "true"
+      clone_main_xla: 0
+      debug-bazel-targets: "//tests:nightly_wheel_resolution_debug_test_gpu"
+      debug-skip-multiaccelerator: "1"
+      debug-test-output: "all"
+      debug-local-test-jobs: "1"
+      debug-dump-python-version-repo-state: "1"
+
   run-pytest-rocm:
+    if: ${{ inputs.debug-bazel-cuda-only != '1' }}
     permissions:
       id-token: write
       contents: read
@@ -196,6 +245,7 @@ jobs:
       gcs_download_uri: ${{inputs.gcs_download_uri}}
 
   run-bazel-test-rocm:
+    if: ${{ inputs.debug-bazel-cuda-only != '1' }}
     uses: ./.github/workflows/bazel_rocm.yml
     strategy:
         fail-fast: false # don't cancel all jobs on failure
@@ -222,6 +272,7 @@ jobs:
       clone_main_xla: 0
 
   run-pytest-tpu:
+    if: ${{ inputs.debug-bazel-cuda-only != '1' }}
     uses: ./.github/workflows/pytest_tpu.yml
     strategy:
         fail-fast: false # don't cancel all jobs on failure
@@ -286,6 +337,7 @@ jobs:
       halt-for-connection: ${{inputs.halt-for-connection}}
 
   run-bazel-test-tpu:
+    if: ${{ inputs.debug-bazel-cuda-only != '1' }}
     uses: ./.github/workflows/bazel_test_tpu.yml
     strategy:
         fail-fast: false # don't cancel all jobs on failure
@@ -360,7 +412,7 @@ jobs:
       clone_main_xla: 0
 
   verify-release-wheels-install:
-    if: ${{ startsWith(github.ref_name, 'release/')}}
+    if: ${{ inputs.debug-bazel-cuda-only != '1' && startsWith(github.ref_name, 'release/') }}
     defaults:
       run:
         # Set the shell to bash as GitHub actions runs with /bin/sh by default
