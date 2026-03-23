@@ -2021,8 +2021,11 @@ jax_multiplatform_test(
 
 jax_multiplatform_test(
     name = "nightly_wheel_resolution_debug_test",
-    srcs = ["nightly_wheel_resolution_debug_test.py"],
+    srcs = ["clear_backends_test.py"],
     enable_backends = ["gpu"],
+    env = {
+        "JAXCI_NIGHTLY_WHEEL_RESOLUTION_DEBUG": "1",
+    },
     tags = ["manual"],
     deps = py_deps("absl/testing"),
 )
