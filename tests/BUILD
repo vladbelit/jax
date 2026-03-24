@@ -2020,6 +2020,14 @@ jax_multiplatform_test(
 )
 
 jax_multiplatform_test(
+    name = "nightly_binary_version_guard_test",
+    srcs = ["nightly_binary_version_guard_test.py"],
+    enable_backends = ["gpu"],
+    tags = ["manual", "notap"],
+    deps = py_deps("absl/testing"),
+)
+
+jax_multiplatform_test(
     name = "nightly_wheel_resolution_debug_test",
     srcs = ["clear_backends_test.py"],
     enable_backends = ["gpu"],

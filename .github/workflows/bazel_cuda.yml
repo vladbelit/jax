@@ -79,6 +79,14 @@ on:
         description: "Should latest XLA be used?"
         type: string
         required: true
+      xla-git-url:
+        description: 'Optional XLA Git remote to clone or fetch when overriding XLA'
+        type: string
+        default: ''
+      xla-git-ref:
+        description: 'Optional XLA Git ref to fetch and check out when overriding XLA'
+        type: string
+        default: ''
       halt-for-connection:
         description: 'Should this workflow run wait for a remote connection?'
         type: string
@@ -121,6 +129,8 @@ jobs:
       JAXCI_BUILD_JAX: ${{ inputs.build_jax }}
       JAXCI_BUILD_JAXLIB: ${{ inputs.build_jaxlib }}
       JAXCI_CLONE_MAIN_XLA: ${{ inputs.clone_main_xla }}
+      JAXCI_XLA_GIT_URL: ${{ inputs.xla-git-url }}
+      JAXCI_XLA_REF: ${{ inputs.xla-git-ref }}
       JAXCI_BAZEL_TARGETS_OVERRIDE: ${{ inputs.debug-bazel-targets }}
       JAXCI_SKIP_MULTIACCELERATOR: ${{ inputs.debug-skip-multiaccelerator }}
       JAXCI_TEST_OUTPUT: ${{ inputs.debug-test-output }}
@@ -149,6 +159,30 @@ jobs:
         uses: google-ml-infra/actions/ci_connection@7f5ca0c263a81ed09ea276524c1b9192f1304e3c
         with:
           halt-dispatch-input: ${{ inputs.halt-for-connection }}
+      - name: Nightly local wheel override guard
+        if: inputs.build_jaxlib == 'false' && inputs.jaxlib-version == 'head' && inputs.skip-download-jaxlib-and-plugins-from-gcs != '1'
+        run: |
+          set -euxo pipefail
+
+          hermetic_python_version="${JAXCI_HERMETIC_PYTHON_VERSION}"
+          freethreaded_flag_value='no'
+          if [[ "${hermetic_python_version}" == *"-nogil" ]]; then
+            hermetic_python_version="${hermetic_python_version%-nogil}-ft"
+            freethreaded_flag_value='yes'
+          fi
+
+          override_xla_repo=()
+          if [[ "${JAXCI_CLONE_MAIN_XLA}" == '1' ]]; then
+            override_xla_repo=(--override_repository=xla="${JAXCI_XLA_GIT_DIR}")
+          fi
+
+          bazel sync --only=python_version_repo \
+            --repo_env=HERMETIC_PYTHON_VERSION="${hermetic_python_version}" \
+            --@rules_python//python/config_settings:py_freethreaded="${freethreaded_flag_value}" \
+            "${override_xla_repo[@]}"
+          python3 ci/check_local_wheel_overrides.py \
+            --cuda-version "${JAXCI_CUDA_VERSION}" \
+            --github-env "${GITHUB_ENV}"
       - name: Debug python_version_repo state (pre-test)
         if: inputs.debug-dump-python-version-repo-state == '1'
         run: |

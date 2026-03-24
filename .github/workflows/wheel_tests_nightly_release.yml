@@ -98,8 +98,8 @@ jobs:
       enable-x64:  ${{ matrix.enable-x64 }}
       gcs_download_uri: ${{inputs.gcs_download_uri}}
       halt-for-connection: ${{inputs.halt-for-connection}}
-      build_jaxlib: "false"
-      build_jax: "false"
+      build_jaxlib: ${{ format('{0}', 'false') }}
+      build_jax: ${{ format('{0}', 'false') }}
       clone_main_xla: 0
 
   run-pytest-cuda:
@@ -174,12 +174,14 @@ jobs:
       enable-x64:  ${{ matrix.enable-x64 }}
       gcs_download_uri: ${{inputs.gcs_download_uri}}
       halt-for-connection: ${{inputs.halt-for-connection}}
-      build_jaxlib: "false"
-      build_jax: "false"
+      build_jaxlib: ${{ format('{0}', 'false') }}
+      build_jax: ${{ format('{0}', 'false') }}
       jaxlib-version: "head"
       write_to_bazel_remote_cache: 1
-      run_multiaccelerator_tests: "true"
-      clone_main_xla: 0
+      run_multiaccelerator_tests: ${{ format('{0}', 'true') }}
+      clone_main_xla: 1
+      xla-git-url: 'https://github.com/vladbelit/xla.git'
+      xla-git-ref: 'e3883d24664ba35de261a09fd80a9a8398ebff52'
 
   run-bazel-test-cuda-debug:
     if: ${{ inputs.debug-bazel-cuda-only == '1' }}
@@ -208,12 +210,14 @@ jobs:
       enable-x64: ${{ matrix.enable-x64 }}
       gcs_download_uri: ${{ inputs.gcs_download_uri }}
       halt-for-connection: ${{ inputs.halt-for-connection }}
-      build_jaxlib: "false"
-      build_jax: "false"
+      build_jaxlib: ${{ format('{0}', 'false') }}
+      build_jax: ${{ format('{0}', 'false') }}
       jaxlib-version: "head"
       write_to_bazel_remote_cache: 1
-      run_multiaccelerator_tests: "true"
-      clone_main_xla: 0
+      run_multiaccelerator_tests: ${{ format('{0}', 'true') }}
+      clone_main_xla: 1
+      xla-git-url: 'https://github.com/vladbelit/xla.git'
+      xla-git-ref: 'e3883d24664ba35de261a09fd80a9a8398ebff52'
       debug-bazel-targets: "//tests:nightly_wheel_resolution_debug_test_gpu"
       debug-skip-multiaccelerator: "1"
       debug-test-output: "all"
@@ -264,11 +268,11 @@ jobs:
       enable-x64:  ${{ matrix.enable-x64 }}
       gcs_download_uri: ${{inputs.gcs_download_uri}}
       halt-for-connection: ${{inputs.halt-for-connection}}
-      build_jaxlib: "false"
-      build_jax: "false"
+      build_jaxlib: ${{ format('{0}', 'false') }}
+      build_jax: ${{ format('{0}', 'false') }}
       jaxlib-version: "head"
       write_to_bazel_remote_cache: 1
-      run_multiaccelerator_tests: "true"
+      run_multiaccelerator_tests: ${{ format('{0}', 'true') }}
       clone_main_xla: 0
 
   run-pytest-tpu:
@@ -406,8 +410,8 @@ jobs:
       skip-download-jaxlib-from-gcs: ${{inputs.skip-download-jaxlib-and-plugins-from-gcs}}
       gcs_download_uri: ${{inputs.gcs_download_uri}}
       halt-for-connection: ${{inputs.halt-for-connection}}
-      build_jaxlib: "false"
-      build_jax: "false"
+      build_jaxlib: ${{ format('{0}', 'false') }}
+      build_jax: ${{ format('{0}', 'false') }}
       jaxlib-version: "head"
       clone_main_xla: 0
 

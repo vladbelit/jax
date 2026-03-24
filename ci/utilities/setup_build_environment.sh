@@ -28,37 +28,84 @@ if [[ ! $(uname -s) =~ "MSYS_NT" ]]; then
   git config --global --add safe.directory $JAXCI_JAX_GIT_DIR
 fi
 
+function resolved_xla_git_url() {
+  if [[ -n "$JAXCI_XLA_GIT_URL" ]]; then
+    echo "$JAXCI_XLA_GIT_URL"
+  else
+    echo "https://github.com/openxla/xla.git"
+  fi
+}
+
 function clone_main_xla() {
-  echo "Cloning XLA at HEAD to $(pwd)/xla"
-  git clone --depth=1 https://github.com/openxla/xla.git $(pwd)/xla
+  local xla_git_url
+  xla_git_url="$(resolved_xla_git_url)"
+  echo "Cloning XLA from ${xla_git_url} to $(pwd)/xla"
+  git clone --depth=1 "${xla_git_url}" $(pwd)/xla
   cd $(pwd)/xla
   echo "XLA commit: $(git log -1 --format=%H)"
   cd ..
   export JAXCI_XLA_GIT_DIR=$(pwd)/xla
 }
 
+function ensure_local_xla_checkout() {
+  if [[ -z "$JAXCI_XLA_GIT_DIR" ]]; then
+    if [[ ! -d $(pwd)/xla ]]; then
+      clone_main_xla
+    else
+      echo "Using existing local XLA folder at $(pwd)/xla."
+      export JAXCI_XLA_GIT_DIR=$(pwd)/xla
+    fi
+  fi
+}
+
+function configure_xla_remote() {
+  local xla_git_url
+  xla_git_url="$(resolved_xla_git_url)"
+
+  pushd "$JAXCI_XLA_GIT_DIR"
+
+  if git remote get-url origin >/dev/null 2>&1; then
+    git remote set-url origin "${xla_git_url}"
+  else
+    git remote add origin "${xla_git_url}"
+  fi
+
+  popd
+}
+
+if [[ -n "$JAXCI_XLA_REF" && -n "$JAXCI_XLA_COMMIT" ]]; then
+  echo "Only one of JAXCI_XLA_REF or JAXCI_XLA_COMMIT may be set."
+  exit 1
+fi
+
 # Clone XLA at HEAD if required.
 if [[ "$JAXCI_CLONE_MAIN_XLA" == 1 ]]; then
-  # Clone only if $(pwd)/xla does not exist to avoid failure on re-runs.
-  if [[ ! -d $(pwd)/xla ]]; then
-    clone_main_xla
-  else
-    echo "JAXCI_CLONE_MAIN_XLA set but local XLA folder already exists: $(pwd)/xla so using that instead."
-    # Set JAXCI_XLA_GIT_DIR if local XLA already exists
-    export JAXCI_XLA_GIT_DIR=$(pwd)/xla
-  fi
+  ensure_local_xla_checkout
+  configure_xla_remote
+fi
+
+if [[ ! -z "$JAXCI_XLA_REF" ]]; then
+  ensure_local_xla_checkout
+  configure_xla_remote
+
+  pushd "$JAXCI_XLA_GIT_DIR"
+
+  git fetch --depth=1 origin "$JAXCI_XLA_REF"
+  echo "JAXCI_XLA_REF is set. Checking out XLA at $JAXCI_XLA_REF from $(resolved_xla_git_url)"
+  git checkout FETCH_HEAD
+
+  popd
 fi
 
 # If a XLA commit is provided, check out XLA at that commit.
 if [[ ! -z "$JAXCI_XLA_COMMIT" ]]; then
-  # Clone XLA at HEAD if a path to local XLA is not provided.
-  if [[ -z "$JAXCI_XLA_GIT_DIR" ]]; then
-    clone_main_xla
-  fi
+  ensure_local_xla_checkout
+  configure_xla_remote
+
   pushd "$JAXCI_XLA_GIT_DIR"
 
   git fetch --depth=1 origin "$JAXCI_XLA_COMMIT"
-  echo "JAXCI_XLA_COMMIT is set. Checking out XLA at $JAXCI_XLA_COMMIT"
+  echo "JAXCI_XLA_COMMIT is set. Checking out XLA at $JAXCI_XLA_COMMIT from $(resolved_xla_git_url)"
   git checkout "$JAXCI_XLA_COMMIT"
 
   popd
@@ -67,10 +114,17 @@ fi
 if [[ ! -z ${JAXCI_XLA_GIT_DIR} ]]; then
   echo "INFO: Overriding XLA to be read from $JAXCI_XLA_GIT_DIR instead of the"
   echo "pinned version in the WORKSPACE."
-  echo "If you would like to revert this behavior, unset JAXCI_CLONE_MAIN_XLA"
-  echo "and JAXCI_XLA_COMMIT in your environment. Note that the Bazel RBE test"
-  echo "commands overrides the XLA repository and thus require a local copy of"
-  echo "XLA to run."
+  echo "XLA remote: $(resolved_xla_git_url)"
+  if [[ ! -z "$JAXCI_XLA_REF" ]]; then
+    echo "XLA ref override: $JAXCI_XLA_REF"
+  fi
+  if [[ ! -z "$JAXCI_XLA_COMMIT" ]]; then
+    echo "XLA commit override: $JAXCI_XLA_COMMIT"
+  fi
+  echo "If you would like to revert this behavior, unset JAXCI_CLONE_MAIN_XLA,"
+  echo "JAXCI_XLA_REF, and JAXCI_XLA_COMMIT in your environment. Note that the"
+  echo "Bazel RBE test commands override the XLA repository and thus require a"
+  echo "local copy of XLA to run."
 fi
 
 # On Windows, convert MSYS Linux-like paths to Windows paths.

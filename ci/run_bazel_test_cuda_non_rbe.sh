@@ -90,6 +90,7 @@ fi
 
 test_output="${JAXCI_TEST_OUTPUT:-errors}"
 skip_multiaccelerator="${JAXCI_SKIP_MULTIACCELERATOR:-0}"
+nightly_binary_guard_target="//tests:nightly_binary_version_guard_test_gpu"
 single_accelerator_targets=(
   //tests:gpu_tests
   //tests:backend_independent_tests
@@ -132,6 +133,27 @@ fi
 # Don't abort the script if one command fails to ensure we run both test
 # commands below.
 set +e
+
+nightly_binary_guard_retval=0
+if [[ -n "${JAXCI_EXPECTED_BINARY_VERSION:-}" ]]; then
+  echo "Running nightly binary version guard..."
+  bazel test "${common_bazel_args[@]}" \
+        --run_under "$(pwd)/build/parallel_accelerator_execute.sh" \
+        --test_env=JAX_ACCELERATOR_COUNT=$gpu_count \
+        --test_env=JAX_TESTS_PER_ACCELERATOR=$max_tests_per_gpu \
+        --local_test_jobs=1 \
+        --test_env=JAXCI_EXPECTED_BINARY_VERSION="$JAXCI_EXPECTED_BINARY_VERSION" \
+        --test_env=JAXCI_EXPECTED_BINARY_PACKAGES="$JAXCI_EXPECTED_BINARY_PACKAGES" \
+        --test_env=JAXCI_EXPECTED_PLUGIN_DISTRIBUTION="$JAXCI_EXPECTED_PLUGIN_DISTRIBUTION" \
+        --test_env=JAXCI_EXPECTED_PJRT_DISTRIBUTION="$JAXCI_EXPECTED_PJRT_DISTRIBUTION" \
+        "$nightly_binary_guard_target"
+
+  nightly_binary_guard_retval=$?
+fi
+
+if [[ $nightly_binary_guard_retval -ne 0 ]]; then
+  exit $nightly_binary_guard_retval
+fi
 
 # Runs single accelerator tests with one GPU apiece.
 # It appears --run_under needs an absolute path.

@@ -52,6 +52,14 @@ on:
         options:
         - "1"
         - "0"
+      xla-git-url:
+        description: 'Optional XLA Git remote to clone or fetch when overriding XLA'
+        type: string
+        default: ''
+      xla-git-ref:
+        description: 'Optional XLA Git ref to fetch and check out when overriding XLA'
+        type: string
+        default: ''
       halt-for-connection:
         description: 'Should this workflow run wait for a remote connection?'
         type: choice
@@ -81,6 +89,14 @@ on:
         description: "Should latest XLA be used?"
         type: string
         default: "0"
+      xla-git-url:
+        description: 'Optional XLA Git remote to clone or fetch when overriding XLA'
+        type: string
+        default: ''
+      xla-git-ref:
+        description: 'Optional XLA Git ref to fetch and check out when overriding XLA'
+        type: string
+        default: ''
       upload_artifacts_to_gcs:
         description: "Should the artifacts be uploaded to a GCS bucket?"
         default: true
@@ -115,6 +131,8 @@ jobs:
       JAXCI_HERMETIC_PYTHON_VERSION: "${{ inputs.python }}"
       JAXCI_CUDA_VERSION: "${{ inputs.cuda-version }}"
       JAXCI_CLONE_MAIN_XLA: "${{ inputs.clone_main_xla }}"
+      JAXCI_XLA_GIT_URL: "${{ inputs.xla-git-url }}"
+      JAXCI_XLA_REF: "${{ inputs.xla-git-ref }}"
 
     name: "${{ inputs.artifact }},
             ${{ (contains(inputs.runner, 'linux-x86') && 'linux x86') ||

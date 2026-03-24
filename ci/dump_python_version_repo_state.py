@@ -4,10 +4,11 @@ import argparse
 import hashlib
 import json
 import re
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import python_version_repo_utils as repo_utils
 
 
 TARGET_PACKAGES = (
@@ -37,49 +38,8 @@ class RequirementVariant:
     target_platforms: list[str] = field(default_factory=list)
 
 
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
-def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        cmd,
-        cwd=repo_root(),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
-
-
-def parse_py_version_bzl(py_version_bzl: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for line in py_version_bzl.read_text(encoding='utf-8').splitlines():
-        if ' = "' not in line:
-            continue
-        key, _, remainder = line.partition(' = "')
-        if not remainder.endswith('"'):
-            continue
-        values[key.strip()] = remainder[:-1]
-    return values
-
-
-def find_python_version_repo_dir(output_base: Path) -> Path:
-    external_dir = output_base / 'external'
-    matches = [
-        path.parent
-        for path in external_dir.rglob('py_version.bzl')
-        if 'python_version_repo' in str(path.parent)
-    ]
-    if not matches:
-        raise FileNotFoundError(
-            f'Could not locate python_version_repo under {external_dir}'
-        )
-    matches.sort(key=lambda path: len(str(path)))
-    return matches[0]
 
 
 def parse_requirement_line(requirement_line: str) -> RequirementEntry:
@@ -216,19 +176,12 @@ def build_selection_report(
 
 
 def build_payload(phase: str) -> dict[str, object]:
-    output_base_result = run(['bazel', 'info', 'output_base'])
-    if output_base_result.returncode != 0:
-        raise RuntimeError(
-            'bazel info output_base failed:\n'
-            f'stdout:\n{output_base_result.stdout}\n'
-            f'stderr:\n{output_base_result.stderr}'
-        )
-
-    output_base = Path(output_base_result.stdout.strip())
-    python_version_repo_dir = find_python_version_repo_dir(output_base)
-    py_version_bzl = python_version_repo_dir / 'py_version.bzl'
+    state = repo_utils.load_python_version_repo_state()
+    output_base = state.output_base
+    python_version_repo_dir = state.python_version_repo_dir
+    py_version_bzl = state.py_version_bzl
     py_version_text = py_version_bzl.read_text(encoding='utf-8')
-    py_version_values = parse_py_version_bzl(py_version_bzl)
+    py_version_values = state.py_version_values
     merged_requirements_name = Path(
         py_version_values['REQUIREMENTS_WITH_LOCAL_WHEELS'].split(':', 1)[1]
     ).name
