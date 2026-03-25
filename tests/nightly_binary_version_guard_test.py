@@ -18,6 +18,10 @@ import os
 from importlib import metadata
 
 from absl.testing import absltest
+import jax
+from jax._src import test_util as jtu
+
+jax.config.parse_flags_with_absl()
 
 
 def _distribution_version(distribution_name: str) -> str:
@@ -27,7 +31,7 @@ def _distribution_version(distribution_name: str) -> str:
     return '<not installed>'
 
 
-class NightlyBinaryVersionGuardTest(absltest.TestCase):
+class NightlyBinaryVersionGuardTest(jtu.JaxTestCase):
 
   def test_nightly_binary_versions_match_expected_override(self):
     expected_binary_version = os.environ.get('JAXCI_EXPECTED_BINARY_VERSION')
@@ -78,10 +82,10 @@ class NightlyBinaryVersionGuardTest(absltest.TestCase):
     )
 
     try:
-      import jax
+      jax.default_backend()
     except Exception as exc:
       self.fail(
-          'import jax failed even though package metadata matched the '
+          'jax runtime initialization failed even though package metadata matched the '
           f'expected nightly binary version {expected_binary_version}: {exc}'
       )
 
