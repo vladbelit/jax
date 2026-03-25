@@ -52,17 +52,21 @@ def _module_locations() -> dict[str, str]:
       'jax': getattr(jax, '__file__', '<missing>'),
       'jaxlib': getattr(jaxlib, '__file__', '<missing>'),
   }
-  for module_name in (
-      'jax_cuda12_plugin',
-      'jax_cuda12_pjrt',
-      'jax_cuda13_plugin',
-      'jax_cuda13_pjrt',
+  for label, module_name in (
+      ('jax_cuda12_plugin', 'jax_cuda12_plugin'),
+      ('jax_cuda12_pjrt', 'jax_plugins.xla_cuda12'),
+      ('jax_cuda13_plugin', 'jax_cuda13_plugin'),
+      ('jax_cuda13_pjrt', 'jax_plugins.xla_cuda13'),
   ):
     try:
       module = importlib.import_module(module_name)
-      locations[module_name] = getattr(module, '__file__', '<missing>')
+      locations[label] = getattr(
+          module,
+          '__file__',
+          list(getattr(module, '__path__', ['<missing>']))[0],
+      )
     except Exception as exc:  # pylint: disable=broad-except
-      locations[module_name] = f'<import failed: {type(exc).__name__}: {exc}>'
+      locations[label] = f'<import failed: {type(exc).__name__}: {exc}>'
   return locations
 
 
