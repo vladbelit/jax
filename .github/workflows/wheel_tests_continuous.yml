@@ -40,19 +40,19 @@ on:
   workflow_dispatch:
     inputs:
       bazel-cuda-bisect:
-        description: 'Run the reduced CUDA head-wheel bisect workflow instead of the full continuous matrix.'
+        description: 'Run the reduced CUDA cuBLASLt confirmation workflow instead of the full continuous matrix.'
         type: choice
         default: '0'
         options:
         - '0'
         - '1'
       bazel-cuda-bisect-runs-per-test:
-        description: 'Value passed to --runs_per_test for the reduced CUDA bisect target.'
+        description: 'Value passed to --runs_per_test for the reduced CUDA confirmation target.'
         type: choice
-        default: '6'
+        default: '8'
         options:
-        - '3'
         - '6'
+        - '8'
         - '10'
       halt-for-connection:
         description: 'Should this workflow run wait for a remote connection?'
@@ -273,22 +273,22 @@ jobs:
         fail-fast: false
         matrix:
           include:
-            - case-id: "xla-515306-clean"
-              case-name: "XLA 515306 clean anchor"
-              xla-commit: "515306ac3563841530bf9d83fbe15fca5a80e813"
-            - case-id: "xla-c9e648-shardy"
-              case-name: "XLA c9e648 shardy rollback"
-              xla-commit: "c9e64887434b056e6280e87129187f70b80a8b6b"
-            - case-id: "xla-920e6a-spmd"
-              case-name: "XLA 920e6a SPMD collective"
-              xla-commit: "920e6a076625cee21ff6de0aa682b3ba734f5272"
-            - case-id: "xla-12be40-gpu"
-              case-name: "XLA 12be40 GPU thunk"
-              xla-commit: "12be40d57ca603452ba3c4f82dcee4b3bc3cb265"
-            - case-id: "xla-caada5-flaky"
-              case-name: "XLA caada5 first flaky anchor"
-              xla-commit: "caada5dc0f78f683531a7cf13d5a3271249093be"
-    name: "Bazel CUDA bisect (${{ matrix.case-name }}, QR sharding)"
+            - case-id: "head-default"
+              case-name: "Head baseline"
+              xla-commit: ""
+              xla-flags: ""
+              xla-cublaslt-default: "default"
+            - case-id: "head-flag-off"
+              case-name: "Head with XLA_FLAGS cuBLASLt off"
+              xla-commit: ""
+              xla-flags: "--xla_gpu_enable_cublaslt=false"
+              xla-cublaslt-default: "default"
+            - case-id: "head-source-off"
+              case-name: "Head with source default off"
+              xla-commit: ""
+              xla-flags: ""
+              xla-cublaslt-default: "off"
+    name: "Bazel CUDA cuBLASLt confirmation (${{ matrix.case-name }})"
     with:
       runner: "linux-x86-g2-48-l4-4gpu"
       python: "3.11"
@@ -302,6 +302,8 @@ jobs:
       build_artifacts_with_rbe: "true"
       clone_main_xla: "1"
       xla-commit: ${{ matrix.xla-commit }}
+      xla-flags: ${{ matrix.xla-flags }}
+      xla-cublaslt-default: ${{ matrix.xla-cublaslt-default }}
       multiaccelerator-bazel-targets: |
         //tests:linalg_sharding_test_gpu
       bazel-runs-per-test: ${{ github.event.inputs.bazel-cuda-bisect-runs-per-test }}

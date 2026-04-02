@@ -90,6 +90,14 @@ on:
         description: "Optional XLA commit to check out after cloning."
         type: string
         default: ""
+      xla-flags:
+        description: "Optional XLA_FLAGS value to pass into Bazel test processes."
+        type: string
+        default: ""
+      xla-cublaslt-default:
+        description: "Optional source-level override for XLA cuBLASLt default (default/off)."
+        type: string
+        default: "default"
       bazel-targets:
         description: "Optional newline-separated Bazel targets for single-accelerator tests."
         type: string
@@ -142,6 +150,8 @@ jobs:
       JAXCI_CLONE_MAIN_XLA: ${{ inputs.clone_main_xla }}
       JAXCI_BUILD_ARTIFACT_WITH_RBE: ${{ inputs.build_artifacts_with_rbe }}
       JAXCI_XLA_COMMIT: ${{ inputs.xla-commit }}
+      JAXCI_XLA_FLAGS: ${{ inputs.xla-flags }}
+      JAXCI_XLA_CUBLASLT_DEFAULT: ${{ inputs.xla-cublaslt-default }}
       JAXCI_BAZEL_TARGETS: ${{ inputs.bazel-targets }}
       JAXCI_MULTIACCELERATOR_BAZEL_TARGETS: ${{ inputs.multiaccelerator-bazel-targets }}
       JAXCI_RUNS_PER_TEST: ${{ inputs.bazel-runs-per-test }}

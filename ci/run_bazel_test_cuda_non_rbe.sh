@@ -126,6 +126,11 @@ if [[ "${JAXCI_NOCACHE_TEST_RESULTS:-0}" == "1" ]]; then
   shared_test_extra_args+=(--nocache_test_results)
 fi
 
+shared_test_env_args=()
+if [[ -n "${JAXCI_XLA_FLAGS:-}" ]]; then
+  shared_test_env_args+=(--test_env="XLA_FLAGS=${JAXCI_XLA_FLAGS}")
+fi
+
 single_accelerator_local_test_jobs="${JAXCI_LOCAL_TEST_JOBS_OVERRIDE:-$num_test_jobs}"
 skip_single_accelerator_tests="${JAXCI_SKIP_SINGLE_ACCELERATOR_TESTS:-0}"
 skip_multiaccelerator_tests="${JAXCI_SKIP_MULTIACCELERATOR_TESTS:-0}"
@@ -156,6 +161,7 @@ else
         --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB \
         --//jax:build_jax=$JAXCI_BUILD_JAX \
         --test_env=XLA_PYTHON_CLIENT_ALLOCATOR=platform \
+        "${shared_test_env_args[@]}" \
         --run_under "$(pwd)/build/parallel_accelerator_execute.sh" \
         --test_output=errors \
         --test_env=JAX_ACCELERATOR_COUNT=$gpu_count \
@@ -197,6 +203,7 @@ else
         --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB \
         --//jax:build_jax=$JAXCI_BUILD_JAX \
         --test_env=XLA_PYTHON_CLIENT_ALLOCATOR=platform \
+        "${shared_test_env_args[@]}" \
         --test_output=errors \
         $TEST_STRATEGY \
         --local_test_jobs=8 \
