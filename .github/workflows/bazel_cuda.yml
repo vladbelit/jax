@@ -98,10 +98,6 @@ on:
         description: "Optional newline-separated Bazel targets for multi-accelerator tests."
         type: string
         default: ""
-      bazel-test-filter:
-        description: "Optional Bazel --test_filter value for single-accelerator tests."
-        type: string
-        default: ""
       bazel-runs-per-test:
         description: "Optional Bazel --runs_per_test value for single-accelerator tests."
         type: string
@@ -148,7 +144,6 @@ jobs:
       JAXCI_XLA_COMMIT: ${{ inputs.xla-commit }}
       JAXCI_BAZEL_TARGETS: ${{ inputs.bazel-targets }}
       JAXCI_MULTIACCELERATOR_BAZEL_TARGETS: ${{ inputs.multiaccelerator-bazel-targets }}
-      JAXCI_TEST_FILTER: ${{ inputs.bazel-test-filter }}
       JAXCI_RUNS_PER_TEST: ${{ inputs.bazel-runs-per-test }}
       JAXCI_SKIP_MULTIACCELERATOR_TESTS: ${{ inputs.skip-multiaccelerator-tests }}
       JAXCI_SKIP_SINGLE_ACCELERATOR_TESTS: ${{ inputs.skip-single-accelerator-tests }}

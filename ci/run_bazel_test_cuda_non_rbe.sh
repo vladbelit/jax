@@ -119,9 +119,6 @@ if [[ -n "${JAXCI_MULTIACCELERATOR_BAZEL_TARGETS:-}" ]]; then
 fi
 
 shared_test_extra_args=()
-if [[ -n "${JAXCI_TEST_FILTER:-}" ]]; then
-  shared_test_extra_args+=(--test_filter="${JAXCI_TEST_FILTER}")
-fi
 if [[ -n "${JAXCI_RUNS_PER_TEST:-}" ]]; then
   shared_test_extra_args+=(--runs_per_test="${JAXCI_RUNS_PER_TEST}")
 fi
