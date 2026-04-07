@@ -30,7 +30,10 @@ fi
 
 function clone_main_xla() {
   echo "Cloning XLA at HEAD to $(pwd)/xla"
-  git clone --depth=1 https://github.com/openxla/xla.git $(pwd)/xla
+  git clone https://github.com/openxla/xla.git $(pwd)/xla
+  git config --global user.email "spooky_tester_man@example.com"
+  git config --global user.name "Spooky Tester Man"
+
   cd $(pwd)/xla
   echo "XLA commit: $(git log -1 --format=%H)"
   cd ..
@@ -49,6 +52,9 @@ if [[ "$JAXCI_CLONE_MAIN_XLA" == 1 ]]; then
   fi
 fi
 
+# Test-only pin, will be reverted before submission.
+export JAXCI_XLA_COMMIT="a5ab1aadf501c5414baaf32def2b3b1b930b4ac2"
+
 # If a XLA commit is provided, check out XLA at that commit.
 if [[ ! -z "$JAXCI_XLA_COMMIT" ]]; then
   # Clone XLA at HEAD if a path to local XLA is not provided.
@@ -57,9 +63,10 @@ if [[ ! -z "$JAXCI_XLA_COMMIT" ]]; then
   fi
   pushd "$JAXCI_XLA_GIT_DIR"
 
-  git fetch --depth=1 origin "$JAXCI_XLA_COMMIT"
+  git fetch origin "$JAXCI_XLA_COMMIT"
   echo "JAXCI_XLA_COMMIT is set. Checking out XLA at $JAXCI_XLA_COMMIT"
   git checkout "$JAXCI_XLA_COMMIT"
+  git pull --rebase origin main  # Test-only, revert before submission.
 
   popd
 fi
