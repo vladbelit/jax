@@ -12,7 +12,7 @@ on:
     branches:
       - main
     paths:
-      - '**/workflows/asan.yaml'
+      - '.github/workflows/asan.yaml'
 permissions: {}
 
 env:
@@ -20,8 +20,6 @@ env:
   CPYTHON_URL: "https://storage.googleapis.com/ml-sysroot-testing/python/cpython-3.13.x-asan-shared-linux-x86_64-llvm-18.1.8.tar.gz"
   CPYTHON_SHA256: "cc7354abad5ab5b87aae3c870e510860c9ffefcd3d8f6c3e02129aaf9d30a5bb"
   CPYTHON_PREFIX: "cpython-3.13.x-asan-shared-linux-x86_64-llvm-18.1.8"
-  UV_DEFAULT_INDEX: "https://us-python.pkg.dev/ml-oss-artifacts-published/pypi-mirror/simple"
-  PIP_INDEX_URL: "https://us-python.pkg.dev/ml-oss-artifacts-published/pypi-mirror/simple"
 
 jobs:
   asan:
@@ -29,7 +27,7 @@ jobs:
     if: github.repository == 'jax-ml/jax'
     runs-on: linux-x86-n4-64
     container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:ea67e8453d8b09c2ba48853da5e79efef4b65804b4a48dfae4b4da89ffd38405 # ml-build container (based on Ubuntu 22.04)
     strategy:
       fail-fast: false
     defaults:
@@ -40,42 +38,68 @@ jobs:
         with:
           path: jax
           persist-credentials: false
-      - name: Build JAX
-        run: |
-          cd jax
-          python build/build.py build --wheels=jaxlib --verbose \
-            --bazel_options=--color=yes \
-            --bazel_options=--config=asan_shared \
-            --python_version="${PYTHON_VERSION}" \
-            --bazel_options=--repo_env=HERMETIC_PYTHON_URL="${CPYTHON_URL}" \
-            --bazel_options=--repo_env=HERMETIC_PYTHON_SHA256="${CPYTHON_SHA256}" \
-            --bazel_options=--repo_env=HERMETIC_PYTHON_PREFIX="${CPYTHON_PREFIX}/"
-
-      - name: Run tests
+      - name: Build JAX and run tests
+        timeout-minutes: 180
         env:
           ASAN_OPTIONS: detect_leaks=0
           JAX_NUM_GENERATED_CASES: 1
           JAX_ENABLE_X64: true
           JAX_SKIP_SLOW_TESTS: true
           PY_COLORS: 1
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          echo "Download CPython with ASAN support"
-          cd "${GITHUB_WORKSPACE}"
-          wget "${CPYTHON_URL}"
-          tar -xzf "${CPYTHON_PREFIX}.tar.gz"
+          set -euo pipefail
+          set -x
 
-          echo "Install python requirements and JAX"
-          "${GITHUB_WORKSPACE}/${CPYTHON_PREFIX}/bin/python3" -m venv \
-            "${GITHUB_WORKSPACE}/${CPYTHON_PREFIX}/venv"
-          # shellcheck source=/dev/null
-          source "${GITHUB_WORKSPACE}/${CPYTHON_PREFIX}/venv/bin/activate"
-          pip install uv~=0.11.2
           cd jax
-          uv pip install -r build/test-requirements.txt
-          uv pip install dist/jaxlib-*.whl -e .
 
-          echo "Run tests"
-          echo "JAX_NUM_GENERATED_CASES=$JAX_NUM_GENERATED_CASES"
-          echo "JAX_ENABLE_X64=$JAX_ENABLE_X64"
-          echo "JAX_SKIP_SLOW_TESTS=$JAX_SKIP_SLOW_TESTS"
-          python -m pytest -n 32 --tb=short --maxfail=20 tests
+          echo "ASAN_OPTIONS=${ASAN_OPTIONS}"
+          echo "JAX_NUM_GENERATED_CASES=${JAX_NUM_GENERATED_CASES}"
+          echo "JAX_ENABLE_X64=${JAX_ENABLE_X64}"
+          echo "JAX_SKIP_SLOW_TESTS=${JAX_SKIP_SLOW_TESTS}"
+
+          test_targets=(
+            //tests:device_test_cpu
+            //tests:metadata_test_cpu
+          )
+          # DO NOT SUBMIT - testing changes via presubmit only [start]
+          # test_targets=(
+          #   //tests:metadata_test_cpu
+          #   //tests:jax_jit_test_cpu
+          # )
+          # test_targets=(
+          #   //tests:cpu_tests
+          # )
+          # DO NOT SUBMIT - testing changes via presubmit only [end]
+
+          echo "Selected ASAN Bazel targets:"
+          printf '  %s\n' "${test_targets[@]}"
+
+          bazel test \
+              --repo_env=HERMETIC_PYTHON_VERSION="${PYTHON_VERSION}" \
+              --repo_env=HERMETIC_PYTHON_URL="${CPYTHON_URL}" \
+              --repo_env=HERMETIC_PYTHON_SHA256="${CPYTHON_SHA256}" \
+              --repo_env=HERMETIC_PYTHON_PREFIX="${CPYTHON_PREFIX}/" \
+              --verbose_failures \
+              --test_env=ASAN_OPTIONS="${ASAN_OPTIONS}" \
+              --test_env=JAX_NUM_GENERATED_CASES="${JAX_NUM_GENERATED_CASES}" \
+              --test_env=JAX_ENABLE_X64="${JAX_ENABLE_X64}" \
+              --test_env=JAX_SKIP_SLOW_TESTS="${JAX_SKIP_SLOW_TESTS}" \
+              --test_env=PY_COLORS="${PY_COLORS}" \
+              --test_output=errors \
+              --test_timeout=1800 \
+              --config=rbe_linux_x86_64 \
+              --config=asan_shared \
+              --test_tag_filters=-noasan \
+              --remote_download_regex='.*test\.xml$' \
+              --show_progress_rate_limit=30 \
+              "${test_targets[@]}"
+
+          ci/utilities/collect_bazel_test_xmls.sh test-artifacts
+      - name: Upload test artifacts
+        if: always()
+        continue-on-error: true
+        uses: ./jax/.github/actions/upload-test-artifacts
+        with:
+          test-artifacts-dir: jax/test-artifacts
+          artifact-name: bazel-test-artifacts-asan-py${{ env.PYTHON_VERSION }}
