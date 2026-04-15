@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 from absl.testing import absltest
 import jax
 from jax._src import test_util as jtu
@@ -20,6 +22,14 @@ jax.config.parse_flags_with_absl()
 
 
 class DeviceTest(jtu.JaxTestCase):
+
+  def test_verify_asan_build(self):
+    if os.environ.get("JAX_VERIFY_ASAN") != "1":
+      return
+
+    self.assertTrue(jtu.is_asan())
+    self.assertFalse(jtu.is_tsan())
+    self.assertFalse(jtu.is_msan())
 
   def test_repr(self):
     device = jax.devices()[0]

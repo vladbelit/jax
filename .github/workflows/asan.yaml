@@ -45,6 +45,7 @@ jobs:
           JAX_NUM_GENERATED_CASES: 1
           JAX_ENABLE_X64: true
           JAX_SKIP_SLOW_TESTS: true
+          JAX_VERIFY_ASAN: 1
           PY_COLORS: 1
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -57,6 +58,7 @@ jobs:
           echo "JAX_NUM_GENERATED_CASES=${JAX_NUM_GENERATED_CASES}"
           echo "JAX_ENABLE_X64=${JAX_ENABLE_X64}"
           echo "JAX_SKIP_SLOW_TESTS=${JAX_SKIP_SLOW_TESTS}"
+          echo "JAX_VERIFY_ASAN=${JAX_VERIFY_ASAN}"
 
           test_targets=(
             //tests:device_test_cpu
@@ -69,6 +71,8 @@ jobs:
           # )
           # test_targets=(
           #   //tests:cpu_tests
+          #   //tests:backend_independent_tests
+          #   //tests/multiprocess:cpu_tests
           # )
           # DO NOT SUBMIT - testing changes via presubmit only [end]
 
@@ -85,6 +89,7 @@ jobs:
               --test_env=JAX_NUM_GENERATED_CASES="${JAX_NUM_GENERATED_CASES}" \
               --test_env=JAX_ENABLE_X64="${JAX_ENABLE_X64}" \
               --test_env=JAX_SKIP_SLOW_TESTS="${JAX_SKIP_SLOW_TESTS}" \
+              --test_env=JAX_VERIFY_ASAN="${JAX_VERIFY_ASAN}" \
               --test_env=PY_COLORS="${PY_COLORS}" \
               --test_output=errors \
               --test_timeout=1800 \
