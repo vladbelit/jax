@@ -1,18 +1,43 @@
 name: CI - Address Sanitizer (nightly)
 
+# - For PRs, group by PR number and cancel stale in-progress runs.
+# - For workflow_dispatch events, group by actor+ref. Cancel stale in-progress runs from the same
+#   actor on the same ref.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+        (github.event_name == 'pull_request'
+         && format('pr-{0}', github.event.pull_request.number))
+
+        || (github.event_name == 'workflow_dispatch'
+            && format('dispatch-{0}-{1}', github.actor, github.ref))
+
+        || format('ref-{0}', github.ref)
+    }}
+  cancel-in-progress: >-
+    ${{
+        github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    }}
 
 on:
   schedule:
     - cron: "0 12 * * *" # Daily at 12:00 UTC
-  workflow_dispatch: # allows triggering the workflow run manually
+  workflow_dispatch: # Allows triggering the workflow run manually
+    inputs:
+      rbe:
+        description: "Use RBE for testing (vs. local execution)"
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "0"
+
   pull_request: # Automatically trigger on pull requests affecting this file
     branches:
       - main
     paths:
-      - '.github/workflows/asan.yaml'
+      - ".github/workflows/asan.yaml"
 permissions: {}
 
 env:
@@ -25,7 +50,12 @@ jobs:
   asan:
     # Don't execute in fork due to runner type
     if: github.repository == 'jax-ml/jax'
-    runs-on: linux-x86-n4-64
+    runs-on: >-
+      ${{ 
+          (github.event_name != 'workflow_dispatch' || inputs.rbe == '1')
+          && 'linux-x86-n4-16'
+          || 'linux-x86-n4-64'
+      }}
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:ea67e8453d8b09c2ba48853da5e79efef4b65804b4a48dfae4b4da89ffd38405 # ml-build container (based on Ubuntu 22.04)
     strategy:
@@ -38,14 +68,15 @@ jobs:
         with:
           path: jax
           persist-credentials: false
-      - name: Build JAX and run tests
-        timeout-minutes: 180
+      - name: Run tests under ASAN via Bazel
+        timeout-minutes: 240
         env:
           ASAN_OPTIONS: detect_leaks=0
           JAX_NUM_GENERATED_CASES: 1
           JAX_ENABLE_X64: true
           JAX_SKIP_SLOW_TESTS: true
-          JAX_VERIFY_ASAN: 1
+          # Default to RBE for PR/scheduled runs. Only workflow_dispatch can opt out.
+          USE_RBE: "${{ (github.event_name != 'workflow_dispatch' || inputs.rbe == '1') && '1' || '0' }}"
           PY_COLORS: 1
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -58,28 +89,49 @@ jobs:
           echo "JAX_NUM_GENERATED_CASES=${JAX_NUM_GENERATED_CASES}"
           echo "JAX_ENABLE_X64=${JAX_ENABLE_X64}"
           echo "JAX_SKIP_SLOW_TESTS=${JAX_SKIP_SLOW_TESTS}"
-          echo "JAX_VERIFY_ASAN=${JAX_VERIFY_ASAN}"
+          echo "GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME}"
+          echo "USE_RBE=${USE_RBE}"
 
           test_targets=(
-            //tests:device_test_cpu
-            //tests:metadata_test_cpu
+            //tests:cpu_tests
+            //tests:backend_independent_tests
+            //tests/multiprocess:cpu_tests
           )
-          # DO NOT SUBMIT - testing changes via presubmit only [start]
-          # test_targets=(
-          #   //tests:metadata_test_cpu
-          #   //tests:jax_jit_test_cpu
-          # )
-          # test_targets=(
-          #   //tests:cpu_tests
-          #   //tests:backend_independent_tests
-          #   //tests/multiprocess:cpu_tests
-          # )
-          # DO NOT SUBMIT - testing changes via presubmit only [end]
 
+          # A tiny set of light targets to run for quick iteration on changes.
+          # test_targets=(
+          #   //tests:device_test_cpu
+          #   //tests:metadata_test_cpu
+          # )
+
+          if [[ "${USE_RBE}" == "1" ]]; then
+            PLATFORM_CONFIG="rbe_linux_x86_64"
+          else
+            PLATFORM_CONFIG="ci_linux_x86_64"
+          fi
+
+          PROFILE_DIR="${PWD}/test-artifacts/bazel-profile"
+          mkdir -p "${PROFILE_DIR}"
+
+          echo "PLATFORM_CONFIG=${PLATFORM_CONFIG}"
           echo "Selected ASAN Bazel targets:"
           printf '  %s\n' "${test_targets[@]}"
+          echo "Bazel profile directory: ${PROFILE_DIR}"
 
+          bazel_status=0
           bazel test \
+              --cache_test_results=false \
+              --profile="${PROFILE_DIR}/command.profile.gz" \
+              --experimental_announce_profile_path \
+              --experimental_profile_include_primary_output \
+              --experimental_profile_include_target_label \
+              --experimental_profile_additional_tasks=remote_queue \
+              --experimental_profile_additional_tasks=remote_process_time \
+              --experimental_profile_additional_tasks=remote_cache_check \
+              --experimental_profile_additional_tasks=remote_download \
+              --experimental_profile_additional_tasks=remote_network \
+              --experimental_profile_additional_tasks=upload_time \
+              --build_event_json_file="${PROFILE_DIR}/build-events.json" \
               --repo_env=HERMETIC_PYTHON_VERSION="${PYTHON_VERSION}" \
               --repo_env=HERMETIC_PYTHON_URL="${CPYTHON_URL}" \
               --repo_env=HERMETIC_PYTHON_SHA256="${CPYTHON_SHA256}" \
@@ -89,18 +141,21 @@ jobs:
               --test_env=JAX_NUM_GENERATED_CASES="${JAX_NUM_GENERATED_CASES}" \
               --test_env=JAX_ENABLE_X64="${JAX_ENABLE_X64}" \
               --test_env=JAX_SKIP_SLOW_TESTS="${JAX_SKIP_SLOW_TESTS}" \
-              --test_env=JAX_VERIFY_ASAN="${JAX_VERIFY_ASAN}" \
               --test_env=PY_COLORS="${PY_COLORS}" \
               --test_output=errors \
               --test_timeout=1800 \
-              --config=rbe_linux_x86_64 \
+              --config=${PLATFORM_CONFIG} \
               --config=asan_shared \
               --test_tag_filters=-noasan \
               --remote_download_regex='.*test\.xml$' \
-              --show_progress_rate_limit=30 \
-              "${test_targets[@]}"
+              --show_progress_rate_limit=5 \
+              "${test_targets[@]}" || bazel_status=$?
 
-          ci/utilities/collect_bazel_test_xmls.sh test-artifacts
+          ci/utilities/collect_bazel_test_xmls.sh test-artifacts || true
+          ls -lah "${PROFILE_DIR}" || true
+
+          exit "${bazel_status}"
+
       - name: Upload test artifacts
         if: always()
         continue-on-error: true
