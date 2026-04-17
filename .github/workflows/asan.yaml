@@ -75,7 +75,7 @@ jobs:
           JAX_NUM_GENERATED_CASES: 1
           JAX_ENABLE_X64: true
           JAX_SKIP_SLOW_TESTS: true
-          # Default to RBE for PR/scheduled runs. Only workflow_dispatch can opt out.
+          # Default to RBE. Workflow dispatch can override to local execution.
           USE_RBE: "${{ (github.event_name != 'workflow_dispatch' || inputs.rbe == '1') && '1' || '0' }}"
           PY_COLORS: 1
           DEBIAN_FRONTEND: noninteractive
@@ -125,13 +125,21 @@ jobs:
               --experimental_announce_profile_path \
               --experimental_profile_include_primary_output \
               --experimental_profile_include_target_label \
+              --experimental_profile_additional_tasks=action \
+              --experimental_profile_additional_tasks=action_complete \
+              --experimental_profile_additional_tasks=critical_path \
+              --experimental_profile_additional_tasks=critical_path_component \
               --experimental_profile_additional_tasks=remote_queue \
+              --experimental_profile_additional_tasks=remote_execution \
               --experimental_profile_additional_tasks=remote_process_time \
               --experimental_profile_additional_tasks=remote_cache_check \
               --experimental_profile_additional_tasks=remote_download \
               --experimental_profile_additional_tasks=remote_network \
               --experimental_profile_additional_tasks=upload_time \
+              --experimental_profile_additional_tasks=wait \
+              --build_event_publish_all_actions \
               --build_event_json_file="${PROFILE_DIR}/build-events.json" \
+              --execution_log_json_file="${PROFILE_DIR}/execution-log.json" \
               --repo_env=HERMETIC_PYTHON_VERSION="${PYTHON_VERSION}" \
               --repo_env=HERMETIC_PYTHON_URL="${CPYTHON_URL}" \
               --repo_env=HERMETIC_PYTHON_SHA256="${CPYTHON_SHA256}" \
@@ -152,6 +160,14 @@ jobs:
               "${test_targets[@]}" || bazel_status=$?
 
           ci/utilities/collect_bazel_test_xmls.sh test-artifacts || true
+
+          if [[ -f "${PROFILE_DIR}/command.profile.gz" ]]; then
+            echo "Bazel analyze-profile summary:"
+            bazel analyze-profile "${PROFILE_DIR}/command.profile.gz" || true
+          fi
+          if [[ -f "${PROFILE_DIR}/execution-log.json" ]]; then
+            gzip -f "${PROFILE_DIR}/execution-log.json"
+          fi
           ls -lah "${PROFILE_DIR}" || true
 
           exit "${bazel_status}"
@@ -163,3 +179,26 @@ jobs:
         with:
           test-artifacts-dir: jax/test-artifacts
           artifact-name: bazel-test-artifacts-asan-py${{ env.PYTHON_VERSION }}
+
+      - name: Echo Bazel profile retrieval URIs
+        if: always()
+        env:
+          GCS_UPLOAD_URI: gs://general-ml-ci-transient/jax-github-actions/jax/${{ github.workflow }}/${{ github.run_number }}/${{ github.run_attempt }}
+          INPUT_ARTIFACT_NAME: bazel-test-artifacts-asan-py${{ env.PYTHON_VERSION }}
+        run: |
+          set -euo pipefail
+
+          printf -v padded_attempt "attempt%03d" "${{ github.run_attempt }}"
+          artifact_name="${INPUT_ARTIFACT_NAME}-${padded_attempt}"
+          artifact_uri="${GCS_UPLOAD_URI}/${artifact_name}"
+
+          echo "Transient GCS artifact prefix:"
+          echo "${artifact_uri}/"
+          echo
+          echo "Expected Bazel profile objects:"
+          echo "${artifact_uri}/bazel-profile/command.profile.gz"
+          echo "${artifact_uri}/bazel-profile/build-events.json"
+          echo "${artifact_uri}/bazel-profile/execution-log.json.gz"
+          echo
+          echo "Anonymous read example:"
+          echo "CLOUDSDK_AUTH_DISABLE_CREDENTIALS=true gcloud storage cat \"${artifact_uri}/bazel-profile/command.profile.gz\" > command.profile.gz"
