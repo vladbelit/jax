@@ -119,45 +119,86 @@ jobs:
           echo "Bazel profile directory: ${PROFILE_DIR}"
 
           bazel_status=0
-          bazel test \
-              --cache_test_results=false \
-              --profile="${PROFILE_DIR}/command.profile.gz" \
-              --experimental_announce_profile_path \
-              --experimental_profile_include_primary_output \
-              --experimental_profile_include_target_label \
-              --experimental_profile_additional_tasks=action \
-              --experimental_profile_additional_tasks=action_complete \
-              --experimental_profile_additional_tasks=critical_path \
-              --experimental_profile_additional_tasks=critical_path_component \
-              --experimental_profile_additional_tasks=remote_queue \
-              --experimental_profile_additional_tasks=remote_execution \
-              --experimental_profile_additional_tasks=remote_process_time \
-              --experimental_profile_additional_tasks=remote_cache_check \
-              --experimental_profile_additional_tasks=remote_download \
-              --experimental_profile_additional_tasks=remote_network \
-              --experimental_profile_additional_tasks=upload_time \
-              --experimental_profile_additional_tasks=wait \
-              --build_event_publish_all_actions \
-              --build_event_json_file="${PROFILE_DIR}/build-events.json" \
-              --execution_log_json_file="${PROFILE_DIR}/execution-log.json" \
-              --repo_env=HERMETIC_PYTHON_VERSION="${PYTHON_VERSION}" \
-              --repo_env=HERMETIC_PYTHON_URL="${CPYTHON_URL}" \
-              --repo_env=HERMETIC_PYTHON_SHA256="${CPYTHON_SHA256}" \
-              --repo_env=HERMETIC_PYTHON_PREFIX="${CPYTHON_PREFIX}/" \
-              --verbose_failures \
-              --test_env=ASAN_OPTIONS="${ASAN_OPTIONS}" \
-              --test_env=JAX_NUM_GENERATED_CASES="${JAX_NUM_GENERATED_CASES}" \
-              --test_env=JAX_ENABLE_X64="${JAX_ENABLE_X64}" \
-              --test_env=JAX_SKIP_SLOW_TESTS="${JAX_SKIP_SLOW_TESTS}" \
-              --test_env=PY_COLORS="${PY_COLORS}" \
-              --test_output=errors \
-              --test_timeout=1800 \
-              --config=${PLATFORM_CONFIG} \
-              --config=asan_shared \
-              --test_tag_filters=-noasan \
-              --remote_download_regex='.*test\.xml$' \
-              --show_progress_rate_limit=5 \
-              "${test_targets[@]}" || bazel_status=$?
+          bazel_args=(
+            test
+          )
+
+          # Core intent: platform, sanitizer mode, and test selection.
+          bazel_args+=(
+            --config="${PLATFORM_CONFIG}"
+            --config=asan_shared
+            --test_tag_filters=-noasan
+          )
+          if [[ "${USE_RBE}" != "1" ]]; then
+            # Publish local-execution results/logs to ResultStore.
+            bazel_args+=(--config=ci_rbe_cache)
+          fi
+
+          # Pass the custom ASAN-instrumented Python to be used as part of the toolchain.
+          bazel_args+=(
+            --repo_env=HERMETIC_PYTHON_VERSION="${PYTHON_VERSION}"
+            --repo_env=HERMETIC_PYTHON_URL="${CPYTHON_URL}"
+            --repo_env=HERMETIC_PYTHON_SHA256="${CPYTHON_SHA256}"
+            --repo_env=HERMETIC_PYTHON_PREFIX="${CPYTHON_PREFIX}/"
+          )
+
+          # Test runtime behavior/polish.
+          bazel_args+=(
+            --test_env=ASAN_OPTIONS="${ASAN_OPTIONS}"
+            --test_env=JAX_NUM_GENERATED_CASES="${JAX_NUM_GENERATED_CASES}"
+            --test_env=JAX_ENABLE_X64="${JAX_ENABLE_X64}"
+            --test_env=JAX_SKIP_SLOW_TESTS="${JAX_SKIP_SLOW_TESTS}"
+            --test_env=PY_COLORS="${PY_COLORS}"
+          )
+
+          # Output and failure behavior.
+          bazel_args+=(
+            --verbose_failures
+            --test_output=errors
+            --test_timeout=1800
+            --cache_test_results=false
+          )
+
+          # Profiling and action-level debugging.
+          profile_tasks=(
+            action
+            action_complete
+            critical_path
+            critical_path_component
+            remote_queue
+            remote_execution
+            remote_process_time
+            remote_cache_check
+            remote_download
+            remote_network
+            upload_time
+            wait
+          )
+          bazel_args+=(
+            --profile="${PROFILE_DIR}/command.profile.gz"
+            --experimental_announce_profile_path
+            --experimental_profile_include_primary_output
+            --experimental_profile_include_target_label
+            --build_event_publish_all_actions
+            --build_event_json_file="${PROFILE_DIR}/build-events.json"
+            --execution_log_json_file="${PROFILE_DIR}/execution-log.json"
+          )
+          for task in "${profile_tasks[@]}"; do
+            bazel_args+=(--experimental_profile_additional_tasks="${task}")
+          done
+
+          # Download and logging policy.
+          bazel_args+=(
+            '--remote_download_regex=.*test\.xml$'
+            --show_progress_rate_limit=5
+          )
+
+          bazel_args+=("${test_targets[@]}")
+
+          echo "Bazel command:"
+          printf '  %q\n' "${bazel_args[@]}"
+
+          bazel "${bazel_args[@]}" || bazel_status=$?
 
           ci/utilities/collect_bazel_test_xmls.sh test-artifacts || true
 
