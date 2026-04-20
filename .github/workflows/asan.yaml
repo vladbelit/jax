@@ -27,11 +27,18 @@ on:
     inputs:
       rbe:
         description: "Use RBE for testing (vs. local execution)"
-        default: "1"
+        default: "0"
         type: choice
         options:
-          - "1"
           - "0"
+          - "1"
+      debug_profiles:
+        description: "Collect detailed Bazel profile artifacts"
+        default: "0"
+        type: choice
+        options:
+          - "0"
+          - "1"
 
   pull_request: # Automatically trigger on pull requests affecting this file
     branches:
@@ -51,8 +58,8 @@ jobs:
     # Don't execute in fork due to runner type
     if: github.repository == 'jax-ml/jax'
     runs-on: >-
-      ${{ 
-          (github.event_name != 'workflow_dispatch' || inputs.rbe == '1')
+      ${{
+          (github.event_name == 'workflow_dispatch' && inputs.rbe == '1')
           && 'linux-x86-n4-16'
           || 'linux-x86-n4-64'
       }}
@@ -75,8 +82,14 @@ jobs:
           JAX_NUM_GENERATED_CASES: 1
           JAX_ENABLE_X64: true
           JAX_SKIP_SLOW_TESTS: true
-          # Default to RBE. Workflow dispatch can override to local execution.
-          USE_RBE: "${{ (github.event_name != 'workflow_dispatch' || inputs.rbe == '1') && '1' || '0' }}"
+          # TODO(belitskiy): Enable RBE once the issue is resolved.
+          # Default to local execution for now as RBE has issues with a random
+          # target hanging for 20-80 minutes before executing in 20-50 seconds.
+          USE_RBE: "${{ (github.event_name == 'workflow_dispatch' && inputs.rbe == '1') && '1' || '0' }}"
+          DEBUG_PROFILES: >-
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.debug_profiles == '1')
+                && '1' || '0'
+            }}
           PY_COLORS: 1
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -91,6 +104,7 @@ jobs:
           echo "JAX_SKIP_SLOW_TESTS=${JAX_SKIP_SLOW_TESTS}"
           echo "GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME}"
           echo "USE_RBE=${USE_RBE}"
+          echo "DEBUG_PROFILES=${DEBUG_PROFILES}"
 
           test_targets=(
             //tests:cpu_tests
@@ -159,33 +173,38 @@ jobs:
             --cache_test_results=false
           )
 
-          # Profiling and action-level debugging.
-          profile_tasks=(
-            action
-            action_complete
-            critical_path
-            critical_path_component
-            remote_queue
-            remote_execution
-            remote_process_time
-            remote_cache_check
-            remote_download
-            remote_network
-            upload_time
-            wait
-          )
+          # Profiling.
           bazel_args+=(
             --profile="${PROFILE_DIR}/command.profile.gz"
             --experimental_announce_profile_path
-            --experimental_profile_include_primary_output
-            --experimental_profile_include_target_label
-            --build_event_publish_all_actions
-            --build_event_json_file="${PROFILE_DIR}/build-events.json"
-            --execution_log_json_file="${PROFILE_DIR}/execution-log.json"
           )
-          for task in "${profile_tasks[@]}"; do
-            bazel_args+=(--experimental_profile_additional_tasks="${task}")
-          done
+          if [[ "${DEBUG_PROFILES}" == "1" ]]; then
+            echo "Detailed Bazel profile artifacts will be uploaded from ${PROFILE_DIR}."
+            profile_tasks=(
+              action
+              action_complete
+              critical_path
+              critical_path_component
+              remote_queue
+              remote_execution
+              remote_process_time
+              remote_cache_check
+              remote_download
+              remote_network
+              upload_time
+              wait
+            )
+            bazel_args+=(
+              --experimental_profile_include_primary_output
+              --experimental_profile_include_target_label
+              --build_event_publish_all_actions
+              --build_event_json_file="${PROFILE_DIR}/build-events.json"
+              --execution_log_json_file="${PROFILE_DIR}/execution-log.json"
+            )
+            for task in "${profile_tasks[@]}"; do
+              bazel_args+=(--experimental_profile_additional_tasks="${task}")
+            done
+          fi
 
           # Download and logging policy.
           bazel_args+=(
@@ -200,8 +219,6 @@ jobs:
 
           bazel "${bazel_args[@]}" || bazel_status=$?
 
-          ci/utilities/collect_bazel_test_xmls.sh test-artifacts || true
-
           if [[ -f "${PROFILE_DIR}/command.profile.gz" ]]; then
             echo "Bazel analyze-profile summary:"
             bazel analyze-profile "${PROFILE_DIR}/command.profile.gz" || true
@@ -209,7 +226,8 @@ jobs:
           if [[ -f "${PROFILE_DIR}/execution-log.json" ]]; then
             gzip -f "${PROFILE_DIR}/execution-log.json"
           fi
-          ls -lah "${PROFILE_DIR}" || true
+
+          ci/utilities/collect_bazel_test_xmls.sh test-artifacts || true
 
           exit "${bazel_status}"
 
@@ -220,26 +238,3 @@ jobs:
         with:
           test-artifacts-dir: jax/test-artifacts
           artifact-name: bazel-test-artifacts-asan-py${{ env.PYTHON_VERSION }}
-
-      - name: Echo Bazel profile retrieval URIs
-        if: always()
-        env:
-          GCS_UPLOAD_URI: gs://general-ml-ci-transient/jax-github-actions/jax/${{ github.workflow }}/${{ github.run_number }}/${{ github.run_attempt }}
-          INPUT_ARTIFACT_NAME: bazel-test-artifacts-asan-py${{ env.PYTHON_VERSION }}
-        run: |
-          set -euo pipefail
-
-          printf -v padded_attempt "attempt%03d" "${{ github.run_attempt }}"
-          artifact_name="${INPUT_ARTIFACT_NAME}-${padded_attempt}"
-          artifact_uri="${GCS_UPLOAD_URI}/${artifact_name}"
-
-          echo "Transient GCS artifact prefix:"
-          echo "${artifact_uri}/"
-          echo
-          echo "Expected Bazel profile objects:"
-          echo "${artifact_uri}/bazel-profile/command.profile.gz"
-          echo "${artifact_uri}/bazel-profile/build-events.json"
-          echo "${artifact_uri}/bazel-profile/execution-log.json.gz"
-          echo
-          echo "Anonymous read example:"
-          echo "CLOUDSDK_AUTH_DISABLE_CREDENTIALS=true gcloud storage cat \"${artifact_uri}/bazel-profile/command.profile.gz\" > command.profile.gz"
