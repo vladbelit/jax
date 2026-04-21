@@ -31,10 +31,39 @@ source ci/envs/default.env
 # Set up the build environment.
 source "ci/utilities/setup_build_environment.sh"
 
+start_log_section() {
+  local section_name="$1"
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "::group::$section_name"
+  fi
+  printf "\n========== %s ==========\n" "$section_name"
+}
+
+end_log_section() {
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "::endgroup::"
+  fi
+}
+
+print_test_configuration() {
+  start_log_section "Bazel CUDA Non-RBE test configuration"
+  echo "CUDA version: $JAXCI_CUDA_VERSION"
+  echo "Bazel config: $TEST_CONFIG"
+  echo "Build jaxlib: $JAXCI_BUILD_JAXLIB"
+  echo "Build jax: $JAXCI_BUILD_JAX"
+  echo "Hermetic Python: $JAXCI_HERMETIC_PYTHON_VERSION"
+  echo "Freethreaded Python: $FREETHREADED_FLAG_VALUE"
+  echo "GPU count: $gpu_count"
+  echo "Memory per GPU (GiB): $memory_per_gpu_gb"
+  echo "Max tests per GPU: $max_tests_per_gpu"
+  echo "Single-accelerator local test jobs: $num_test_jobs"
+  echo "Multi-accelerator local test jobs: $multi_accelerator_num_test_jobs"
+  end_log_section
+}
+
 # Run Bazel GPU tests (single accelerator and multiaccelerator tests) directly
 # on the VM without RBE.
 nvidia-smi
-echo "Running single accelerator tests (without RBE)..."
 
 # Set up test environment variables.
 # Set the number of test jobs to min(num_cpu_cores, gpu_count * max_tests_per_gpu, total_ram_gb / 6)
@@ -61,6 +90,7 @@ fi
 if [[ $host_memory_limit -lt $num_test_jobs ]]; then
   num_test_jobs=$host_memory_limit
 fi
+multi_accelerator_num_test_jobs=8
 # End of test environment variables setup.
 
 if [[ "$JAXCI_HERMETIC_PYTHON_VERSION" == *"-nogil" ]]; then
@@ -115,8 +145,37 @@ if [[ -n "$TEST_STRATEGY" ]]; then
   common_bazel_test_args+=("$TEST_STRATEGY")
 fi
 
-if [[ "$JAXCI_BUILD_JAXLIB" == "false" ]]; then
-  # Do no proceed to the full-scale testing without first verifying the local
+single_accelerator_test_args=(
+  "--run_under=$(pwd)/build/parallel_accelerator_execute.sh"
+  --test_output=errors
+  "--test_env=JAX_ACCELERATOR_COUNT=$gpu_count"
+  "--test_env=JAX_TESTS_PER_ACCELERATOR=$max_tests_per_gpu"
+  "--local_test_jobs=$num_test_jobs"
+  --test_env=JAX_EXCLUDE_TEST_TARGETS=PmapTest.testSizeOverflow
+  --test_tag_filters=-multiaccelerator
+)
+single_accelerator_test_targets=(
+  //tests:gpu_tests
+  //tests:backend_independent_tests
+  //tests/pallas:gpu_tests
+  //tests/pallas:backend_independent_tests
+)
+
+multi_accelerator_test_args=(
+  --test_output=errors
+  "--local_test_jobs=$multi_accelerator_num_test_jobs"
+  --test_tag_filters=multiaccelerator
+)
+multi_accelerator_test_targets=(
+  //tests:gpu_tests
+  //tests/pallas:gpu_tests
+  //tests/multiprocess:gpu_tests
+)
+
+print_test_configuration
+
+if [[ "$JAXCI_BUILD_JAXLIB" == "false" || "$JAXCI_BUILD_JAX" == "false" ]]; then
+  # Do not proceed to the full-scale testing without first verifying the local
   # wheel resolution works properly.
   bash ci/run_local_wheel_smoke_test.sh "${common_bazel_test_args[@]}"
 fi
@@ -125,38 +184,26 @@ fi
 # commands below.
 set +e
 
-echo "================== Single accelerator tests (w/o RBE) =================="
-
 # Runs single accelerator tests with one GPU apiece.
 # It appears --run_under needs an absolute path.
 # The product of the `JAX_ACCELERATOR_COUNT`` and `JAX_TESTS_PER_ACCELERATOR`
 # should match the VM's CPU core count (set in `--local_test_jobs`).
+start_log_section "Bazel CUDA Non-RBE single accelerator tests"
 bazel "${common_bazel_test_args[@]}" \
-  --run_under "$(pwd)/build/parallel_accelerator_execute.sh" \
-  --test_output=errors \
-  --test_env=JAX_ACCELERATOR_COUNT=$gpu_count \
-  --test_env=JAX_TESTS_PER_ACCELERATOR=$max_tests_per_gpu \
-  --local_test_jobs=$num_test_jobs \
-  --test_env=JAX_EXCLUDE_TEST_TARGETS=PmapTest.testSizeOverflow \
-  --test_tag_filters=-multiaccelerator \
-  //tests:gpu_tests //tests:backend_independent_tests \
-  //tests/pallas:gpu_tests //tests/pallas:backend_independent_tests
-
-# Store the return value of the first bazel command.
+  "${single_accelerator_test_args[@]}" \
+  -- \
+  "${single_accelerator_test_targets[@]}"
 first_bazel_cmd_retval=$?
-
-echo "=================== Multi-accelerator tests (w/o RBE) =================="
+end_log_section
 
 # Runs multiaccelerator tests with all GPUs directly on the VM without RBE...
+start_log_section "Bazel CUDA Non-RBE multi-accelerator tests"
 bazel "${common_bazel_test_args[@]}" \
-  --test_output=errors \
-  --local_test_jobs=8 \
-  --test_tag_filters=multiaccelerator \
-  //tests:gpu_tests //tests/pallas:gpu_tests \
-  //tests/multiprocess:gpu_tests
-
-# Store the return value of the second bazel command.
+  "${multi_accelerator_test_args[@]}" \
+  -- \
+  "${multi_accelerator_test_targets[@]}"
 second_bazel_cmd_retval=$?
+end_log_section
 
 ci/utilities/collect_bazel_test_xmls.sh test-artifacts
 

@@ -49,9 +49,9 @@ if bazel "$@" \
   echo "Local wheel smoke test passed."
   end_github_actions_group
   exit 0
+else
+  smoke_status=$?
+  echo "Local wheel smoke test failed."
+  end_github_actions_group
+  exit "$smoke_status"
 fi
-
-smoke_status=$?
-echo "Local wheel smoke test failed"
-end_github_actions_group
-exit "$smoke_status"
