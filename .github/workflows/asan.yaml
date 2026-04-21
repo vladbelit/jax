@@ -1,8 +1,36 @@
 name: CI - Address Sanitizer (nightly)
 
+on:
+  workflow_dispatch: # Allows triggering a run manually
+    inputs:
+      rbe:
+        description: "Use RBE for testing (vs. local execution)"
+        default: "0"
+        type: choice
+        options:
+          - "0"
+          - "1"
+      debug_profiles:
+        description: "Collect detailed Bazel profile artifacts"
+        default: "0"
+        type: choice
+        options:
+          - "0"
+          - "1"
+
+  schedule:
+    - cron: "0 12 * * *" # Daily at 12:00 UTC
+
+  pull_request: # Trigger on pull requests affecting this file
+    branches:
+      - main
+    paths:
+      - ".github/workflows/asan.yaml"
+
 # - For PRs, group by PR number and cancel stale in-progress runs.
-# - For workflow_dispatch events, group by actor+ref. Cancel stale in-progress runs from the same
-#   actor on the same ref.
+# - For workflow_dispatch events, group by actor+ref and cancel stale
+#   in-progress runs.
+# - For all other events, group by ref without canceling in-progress runs.
 concurrency:
   group: >-
     ${{ github.workflow }}-
@@ -20,31 +48,6 @@ concurrency:
         github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     }}
 
-on:
-  schedule:
-    - cron: "0 12 * * *" # Daily at 12:00 UTC
-  workflow_dispatch: # Allows triggering the workflow run manually
-    inputs:
-      rbe:
-        description: "Use RBE for testing (vs. local execution)"
-        default: "0"
-        type: choice
-        options:
-          - "0"
-          - "1"
-      debug_profiles:
-        description: "Collect detailed Bazel profile artifacts"
-        default: "0"
-        type: choice
-        options:
-          - "0"
-          - "1"
-
-  pull_request: # Automatically trigger on pull requests affecting this file
-    branches:
-      - main
-    paths:
-      - ".github/workflows/asan.yaml"
 permissions: {}
 
 env:
@@ -63,6 +66,19 @@ jobs:
           && 'linux-x86-n4-16'
           || 'linux-x86-n4-64'
       }}
+    env:
+      # TODO(belitskiy): Enable RBE once the issue is resolved.
+      # Default to local execution for now as RBE has issues with a random
+      # target hanging for 20-80 minutes before executing in 20-50 seconds.
+      USE_RBE: >-
+        ${{ (github.event_name == 'workflow_dispatch' && inputs.rbe == '1')
+            && '1' || '0' }}
+      # Enable detailed Bazel profile artifacts, if requested.
+      DEBUG_PROFILES: >-
+        ${{ (github.event_name == 'workflow_dispatch'
+              && inputs.debug_profiles == '1')
+            && '1' || '0'
+        }}
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:ea67e8453d8b09c2ba48853da5e79efef4b65804b4a48dfae4b4da89ffd38405 # ml-build container (based on Ubuntu 22.04)
     strategy:
@@ -75,21 +91,15 @@ jobs:
         with:
           path: jax
           persist-credentials: false
-      - name: Run tests under ASAN via Bazel
+      - name: >-
+          Run tests under ASAN via
+          Bazel (${{ env.USE_RBE == '1' && 'RBE' || 'local' }})
         timeout-minutes: 240
         env:
           ASAN_OPTIONS: detect_leaks=0
           JAX_NUM_GENERATED_CASES: 1
           JAX_ENABLE_X64: true
           JAX_SKIP_SLOW_TESTS: true
-          # TODO(belitskiy): Enable RBE once the issue is resolved.
-          # Default to local execution for now as RBE has issues with a random
-          # target hanging for 20-80 minutes before executing in 20-50 seconds.
-          USE_RBE: "${{ (github.event_name == 'workflow_dispatch' && inputs.rbe == '1') && '1' || '0' }}"
-          DEBUG_PROFILES: >-
-            ${{ (github.event_name == 'workflow_dispatch' && inputs.debug_profiles == '1')
-                && '1' || '0'
-            }}
           PY_COLORS: 1
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -112,7 +122,7 @@ jobs:
             //tests/multiprocess:cpu_tests
           )
 
-          # A tiny set of light targets to run for quick iteration on changes.
+          # A tiny target set to run for quick iteration on changes.
           # test_targets=(
           #   //tests:device_test_cpu
           #   //tests:metadata_test_cpu
@@ -148,7 +158,8 @@ jobs:
             bazel_args+=(--config=ci_rbe_cache)
           fi
 
-          # Pass the custom ASAN-instrumented Python to be used as part of the toolchain.
+          # Pass the custom ASAN-instrumented Python
+          # to be used as part of the hermetic toolchain.
           bazel_args+=(
             --repo_env=HERMETIC_PYTHON_VERSION="${PYTHON_VERSION}"
             --repo_env=HERMETIC_PYTHON_URL="${CPYTHON_URL}"
@@ -165,12 +176,20 @@ jobs:
             --test_env=PY_COLORS="${PY_COLORS}"
           )
 
+          if [[ "${DEBUG_PROFILES}" == "1" ]]; then
+            bazel_args+=(
+              --cache_test_results=false
+            )
+          fi
+
           # Output and failure behavior.
           bazel_args+=(
             --verbose_failures
             --test_output=errors
             --test_timeout=1800
-            --cache_test_results=false
+            # Emit progress updates less frequently
+            # to avoid spamming the logs with repetitive status lines.
+            --show_progress_rate_limit=10
           )
 
           # Profiling.
@@ -179,7 +198,7 @@ jobs:
             --experimental_announce_profile_path
           )
           if [[ "${DEBUG_PROFILES}" == "1" ]]; then
-            echo "Detailed Bazel profile artifacts will be uploaded from ${PROFILE_DIR}."
+            echo "Detailed Bazel profile artifacts will be output to ${PROFILE_DIR}."
             profile_tasks=(
               action
               action_complete
@@ -206,13 +225,14 @@ jobs:
             done
           fi
 
-          # Download and logging policy.
+          # Download filter for test artifacts only.
           bazel_args+=(
             '--remote_download_regex=.*test\.xml$'
-            --show_progress_rate_limit=5
           )
 
-          bazel_args+=("${test_targets[@]}")
+          bazel_args+=(
+            "${test_targets[@]}"
+          )
 
           echo "Bazel command:"
           printf '  %q\n' "${bazel_args[@]}"
