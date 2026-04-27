@@ -258,7 +258,8 @@ class PinnedBufferTest(jtu.JaxTestCase):
     hlo = f.lower(x).compile().as_text()
     self.assertRegex(
         hlo,
-        r'output_memory_space_colors.*color.*1'
+        r'b\(f32\[3\]\{[^}]*S\(1\)[^}]*\}\) custom-call\([^)]*\), '
+        r'custom_call_target="tpu_custom_call"',
     )
 
 
