@@ -33,11 +33,34 @@ partial = functools.partial
 
 
 def _json_object_with_fields(fields):
-  return re.escape(json.dumps(fields, separators=(',', ':')))
+  return (
+      r'\{'
+      + ''.join(
+          f'(?=[^{{}}]*{_json_object_with_a_field(name, value)})'
+          for name, value in fields.items()
+      )
+      + r'[^{}]*\}'
+  )
 
 
 def _json_object_with_a_field(field_name, value):
-  return _json_object_with_fields({field_name: value})[2:-2]
+  return (
+      re.escape(json.dumps(field_name, separators=(',', ':')))
+      + ':'
+      + _json_value_pattern(value)
+  )
+
+
+def _json_value_pattern(value):
+  if isinstance(value, dict):
+    return _json_object_with_fields(value)
+  if isinstance(value, list):
+    return (
+        r'\['
+        + ','.join(_json_value_pattern(entry) for entry in value)
+        + r'\]'
+    )
+  return re.escape(json.dumps(value, separators=(',', ':')))
 
 
 class TPUPallasCallMemorySpaceTest(jtu.JaxTestCase):
