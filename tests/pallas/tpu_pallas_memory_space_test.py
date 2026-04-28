@@ -15,6 +15,7 @@
 """Test TPU-specific uses of Pallas memory space APIs."""
 
 import functools
+import json
 import re
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -31,23 +32,12 @@ P = jax.sharding.PartitionSpec
 partial = functools.partial
 
 
-def _json_object_with_fields(**fields):
-  return (
-      r'\{'
-      + ''.join(
-          f'(?=[^{{}}]*"{name}":{re.escape(value)})'
-          for name, value in fields.items()
-      )
-      + r'[^{}]*\}'
-  )
+def _json_object_with_fields(fields):
+  return re.escape(json.dumps(fields, separators=(',', ':')))
 
 
-def _memory_space_colors_pattern(field_name, entries):
-  return (
-      re.escape(f'"{field_name}":[')
-      + ','.join(_json_object_with_fields(**entry) for entry in entries)
-      + r'\]'
-  )
+def _json_object_with_a_field(field_name, value):
+  return _json_object_with_fields({field_name: value})[2:-2]
 
 
 class TPUPallasCallMemorySpaceTest(jtu.JaxTestCase):
@@ -92,13 +82,15 @@ class TPUPallasCallMemorySpaceTest(jtu.JaxTestCase):
     else:
       self.assertRegex(
           hlo,
-          _memory_space_colors_pattern(
+          _json_object_with_a_field(
               'input_memory_space_colors',
-              [{
-                  'operand_index': '"0"',
-                  'color': f'"{color}"',
-                  'shape_index': '[]',
-              }],
+              [
+                  {
+                      'color': str(color),
+                      'operand_index': '0',
+                      'shape_index': [],
+                  }
+              ],
           ),
       )
 
@@ -150,9 +142,9 @@ class TPUPallasCallMemorySpaceTest(jtu.JaxTestCase):
     else:
       self.assertRegex(
           hlo,
-          _memory_space_colors_pattern(
+          _json_object_with_a_field(
               'output_memory_space_colors',
-              [{'color': f'"{color}"', 'shape_index': '[]'}],
+              [{'color': str(color), 'shape_index': []}],
           ),
       )
 
@@ -190,11 +182,11 @@ class TPUPallasCallMemorySpaceTest(jtu.JaxTestCase):
     hlo = jax.jit(f).lower(x).compile().as_text()
     self.assertRegex(
         hlo,
-        _memory_space_colors_pattern(
+        _json_object_with_a_field(
             'output_memory_space_colors',
             [
-                {'color': f'"{color}"', 'shape_index': '["0"]'},
-                {'color': f'"{color}"', 'shape_index': '["1"]'},
+                {'color': str(color), 'shape_index': ['0']},
+                {'color': str(color), 'shape_index': ['1']},
             ],
         ),
     )
@@ -249,18 +241,18 @@ class TPUCoreMapMemorySpaceTest(jtu.JaxTestCase):
     else:
       self.assertRegex(
           hlo,
-          _memory_space_colors_pattern(
+          _json_object_with_a_field(
               'input_memory_space_colors',
               [
                   {
-                      'operand_index': '"0"',
-                      'color': f'"{color}"',
-                      'shape_index': '[]',
+                      'color': str(color),
+                      'operand_index': '0',
+                      'shape_index': [],
                   },
                   {
-                      'operand_index': '"1"',
-                      'color': f'"{color}"',
-                      'shape_index': '[]',
+                      'color': str(color),
+                      'operand_index': '1',
+                      'shape_index': [],
                   },
               ],
           ),
