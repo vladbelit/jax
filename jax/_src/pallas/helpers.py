@@ -28,7 +28,6 @@ from jax._src import typing as jax_typing
 import jax._src.lax as lax
 from jax._src.lax.control_flow import conditionals
 from jax._src.pallas import core as pl_core
-from jax._src.pallas import mpmd
 from jax._src.pallas import primitives as pl_primitives
 from jax._src.pallas import utils as pl_utils
 
@@ -179,6 +178,7 @@ def debug_check(condition, message):
   """
   return checkify.debug_check(condition, message)
 
+
 def _make_kernel(meshes_and_fns: Sequence[tuple[pl_core.Mesh, Callable]],
                  out_type: object,
                  scratch_types: pl_core.ScratchShapeTree = (),
@@ -186,6 +186,8 @@ def _make_kernel(meshes_and_fns: Sequence[tuple[pl_core.Mesh, Callable]],
                  **mesh_kwargs
                  ):
   def wrapper(*operands):
+    from jax._src.pallas import mpmd  # Avoid import cycles with backends.
+
     return mpmd.mpmd_map(
         meshes_and_fns,
         out_types=out_type,
