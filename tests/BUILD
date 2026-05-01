@@ -2018,6 +2018,16 @@ jax_py_test(
 )
 
 jax_py_test(
+    name = "tpu_custom_call_test",
+    srcs = ["tpu_custom_call_test.py"],
+    deps = [
+        "//jax",
+        "//jax/_src:test_util",
+        "//jax/_src:tpu_custom_call",
+    ] + py_deps("absl/testing"),
+)
+
+jax_py_test(
     name = "source_info_test",
     srcs = ["source_info_test.py"],
     deps = [
