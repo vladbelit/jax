@@ -87,7 +87,7 @@ def _module_locations(package_names: list[str]) -> dict[str, str]:
 class LocalWheelSmokeTest(jtu.JaxTestCase):
 
   def test_local_wheel_versions_and_runtime_initialization(self):
-    print("=== Local wheel resolution debug ===")
+    print("=== Local wheel resolution ===")
 
     expected_versions_json = os.environ.get(_EXPECTED_VERSIONS_ENV)
     self.assertIsNotNone(

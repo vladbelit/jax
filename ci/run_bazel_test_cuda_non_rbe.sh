@@ -115,10 +115,21 @@ if [[ -n "$TEST_STRATEGY" ]]; then
   common_bazel_test_args+=("$TEST_STRATEGY")
 fi
 
-if [[ "$JAXCI_BUILD_JAXLIB" == "false" ]]; then
-  # Do no proceed to the full-scale testing without first verifying the local
-  # wheel resolution works properly.
-  bash ci/run_local_wheel_smoke_test.sh "${common_bazel_test_args[@]}"
+single_accelerator_bazel_test_args=("${common_bazel_test_args[@]}")
+single_accelerator_test_targets=(
+  //tests:gpu_tests
+  //tests:backend_independent_tests
+  //tests/pallas:gpu_tests
+  //tests/pallas:backend_independent_tests
+)
+if [[ "$JAXCI_BUILD_JAXLIB" == "false" || "$JAXCI_BUILD_JAX" == "false" ]]; then
+  expected_wheel_versions_json="$(
+    python3 ci/parse_wheel_metadata.py --wheel-dir=dist
+  )"
+  single_accelerator_bazel_test_args+=(
+    "--test_env=JAXCI_EXPECTED_WHEEL_VERSIONS_JSON=$expected_wheel_versions_json"
+  )
+  single_accelerator_test_targets+=(//tests:local_wheel_smoke_test_gpu)
 fi
 
 # Don't abort the script if one command fails to ensure we run both test
@@ -129,7 +140,7 @@ set +e
 # It appears --run_under needs an absolute path.
 # The product of the `JAX_ACCELERATOR_COUNT`` and `JAX_TESTS_PER_ACCELERATOR`
 # should match the VM's CPU core count (set in `--local_test_jobs`).
-bazel "${common_bazel_test_args[@]}" \
+bazel "${single_accelerator_bazel_test_args[@]}" \
   --run_under "$(pwd)/build/parallel_accelerator_execute.sh" \
   --test_output=errors \
   --test_env=JAX_ACCELERATOR_COUNT=$gpu_count \
@@ -137,8 +148,7 @@ bazel "${common_bazel_test_args[@]}" \
   --local_test_jobs=$num_test_jobs \
   --test_env=JAX_EXCLUDE_TEST_TARGETS=PmapTest.testSizeOverflow \
   --test_tag_filters=-multiaccelerator \
-  //tests:gpu_tests //tests:backend_independent_tests \
-  //tests/pallas:gpu_tests //tests/pallas:backend_independent_tests
+  "${single_accelerator_test_targets[@]}"
 
 # Store the return value of the first bazel command.
 first_bazel_cmd_retval=$?
