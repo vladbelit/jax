@@ -79,11 +79,13 @@ for j in `seq 0 $((JAX_TESTS_PER_ACCELERATOR-1))`; do
           devices)
             unset TPU_VISIBLE_CHIPS
             export TPU_VISIBLE_DEVICES=$i
-            export TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1,1
-            export TPU_PROCESS_BOUNDS=1,1,1,1
+            export TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1
+            export TPU_PROCESS_BOUNDS=1,1,1
             ;;
           chips)
             unset TPU_VISIBLE_DEVICES
+            unset TPU_CHIPS_PER_PROCESS_BOUNDS
+            unset TPU_PROCESS_BOUNDS
             export TPU_VISIBLE_CHIPS=$i
             ;;
           *)
@@ -93,7 +95,7 @@ for j in `seq 0 $((JAX_TESTS_PER_ACCELERATOR-1))`; do
         esac
         export CUDA_VISIBLE_DEVICES=$i
         export ROCR_VISIBLE_DEVICES=$i
-        echo "Running test $TEST_BINARY $* on accelerator $i"
+        echo "Running test $TEST_BINARY $* on accelerator $i with TPU_VISIBLE_DEVICES=${TPU_VISIBLE_DEVICES:-unset} TPU_VISIBLE_CHIPS=${TPU_VISIBLE_CHIPS:-unset}"
         "$TEST_BINARY" $@
       )
       return_code=$?

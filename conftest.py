@@ -65,11 +65,15 @@ def pytest_collection() -> None:
         "JAX_TPU_XDIST_VISIBILITY_MODE", "chips"
     )
     if tpu_visibility_mode == "devices":
-      os.environ.setdefault("TPU_VISIBLE_DEVICES", str(xdist_worker_number))
-      os.environ.setdefault("TPU_CHIPS_PER_PROCESS_BOUNDS", "1,1,1,1")
-      os.environ.setdefault("TPU_PROCESS_BOUNDS", "1,1,1,1")
+      os.environ.pop("TPU_VISIBLE_CHIPS", None)
+      os.environ["TPU_VISIBLE_DEVICES"] = str(xdist_worker_number)
+      os.environ["TPU_CHIPS_PER_PROCESS_BOUNDS"] = "1,1,1"
+      os.environ["TPU_PROCESS_BOUNDS"] = "1,1,1"
     elif tpu_visibility_mode == "chips":
-      os.environ.setdefault("TPU_VISIBLE_CHIPS", str(xdist_worker_number))
+      os.environ.pop("TPU_VISIBLE_DEVICES", None)
+      os.environ.pop("TPU_CHIPS_PER_PROCESS_BOUNDS", None)
+      os.environ.pop("TPU_PROCESS_BOUNDS", None)
+      os.environ["TPU_VISIBLE_CHIPS"] = str(xdist_worker_number)
     else:
       raise ValueError(
           "JAX_TPU_XDIST_VISIBILITY_MODE must be 'chips' or 'devices'; "
