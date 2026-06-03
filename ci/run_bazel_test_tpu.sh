@@ -51,6 +51,19 @@ NB_TPUS=$JAXCI_TPU_CORES
 JOBS_PER_ACC=1
 J=$((NB_TPUS * JOBS_PER_ACC))
 
+case "${JAXCI_TPU_PARALLELISM_MODE:-chip}" in
+  core)
+    TPU_XDIST_VISIBILITY_MODE="devices"
+    ;;
+  chip)
+    TPU_XDIST_VISIBILITY_MODE="chips"
+    ;;
+  *)
+    echo "Unknown JAXCI_TPU_PARALLELISM_MODE: ${JAXCI_TPU_PARALLELISM_MODE}"
+    exit 1
+    ;;
+esac
+
 # TODO(ybaturina): Bazel cache shouldn't be invalidated when
 # `VBAR_CONTROL_SERVICE_URL` changes.
 COMMON_TPU_TEST_ENV_VARS="--test_env=TPU_SKIP_MDS_QUERY=true \
@@ -107,6 +120,7 @@ if [[ "$JAXCI_RUN_FULL_TPU_TEST_SUITE" == "1" ]]; then
     --local_test_jobs=$J \
     --test_env=JAX_TEST_NUM_THREADS=$J \
     --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
+    --test_env=JAX_TPU_XDIST_VISIBILITY_MODE=${TPU_XDIST_VISIBILITY_MODE} \
     --test_env=JAX_SKIP_SLOW_TESTS=1 \
     --test_env=JAX_ENABLE_TPU_XDIST=1 \
     --test_env=JAX_PLATFORMS=tpu,cpu \
@@ -176,6 +190,7 @@ else
     --local_test_jobs=$J \
     --test_env=JAX_TEST_NUM_THREADS=$J \
     --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
+    --test_env=JAX_TPU_XDIST_VISIBILITY_MODE=${TPU_XDIST_VISIBILITY_MODE} \
     --test_env=JAX_SKIP_SLOW_TESTS=1 \
     --test_env=JAX_ENABLE_TPU_XDIST=1 \
     --test_env=JAX_PLATFORMS=tpu,cpu \

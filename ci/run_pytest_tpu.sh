@@ -52,6 +52,19 @@ export JAX_PLATFORMS=tpu,cpu
 export JAX_SKIP_SLOW_TESTS=true
 # End of common test environment variable setup
 
+case "${JAXCI_TPU_PARALLELISM_MODE:-chip}" in
+  core)
+    TPU_XDIST_VISIBILITY_MODE="devices"
+    ;;
+  chip)
+    TPU_XDIST_VISIBILITY_MODE="chips"
+    ;;
+  *)
+    echo "Unknown JAXCI_TPU_PARALLELISM_MODE: ${JAXCI_TPU_PARALLELISM_MODE}"
+    exit 1
+    ;;
+esac
+
 echo "Running TPU tests..."
 mkdir -p test-artifacts
 
@@ -70,7 +83,8 @@ if [[ "$JAXCI_RUN_FULL_TPU_TEST_SUITE" == "1" ]]; then
   fi
 
   # Run single-accelerator tests in parallel
-  JAX_ENABLE_TPU_XDIST=true "$JAXCI_PYTHON" -m pytest -n="$JAXCI_TPU_CORES" --tb=short \
+  JAX_ENABLE_TPU_XDIST=true JAX_TPU_XDIST_VISIBILITY_MODE="$TPU_XDIST_VISIBILITY_MODE" \
+    "$JAXCI_PYTHON" -m pytest -n="$JAXCI_TPU_CORES" --tb=short \
     --junitxml=test-artifacts/junit-single.xml \
     --deselect=tests/pallas/tpu_pallas_call_print_test.py::PallasCallPrintTest \
     --deselect=tests/pallas/tpu_sparsecore_pallas_test.py::DebugPrintTest \
@@ -89,7 +103,8 @@ if [[ "$JAXCI_RUN_FULL_TPU_TEST_SUITE" == "1" ]]; then
   second_cmd_retval=$?
 else
   # Run single-accelerator tests in parallel
-  JAX_ENABLE_TPU_XDIST=true "$JAXCI_PYTHON" -m pytest -n="$JAXCI_TPU_CORES" --tb=short \
+  JAX_ENABLE_TPU_XDIST=true JAX_TPU_XDIST_VISIBILITY_MODE="$TPU_XDIST_VISIBILITY_MODE" \
+    "$JAXCI_PYTHON" -m pytest -n="$JAXCI_TPU_CORES" --tb=short \
     --junitxml=test-artifacts/junit-single.xml \
     --maxfail=20 -m "not multiaccelerator" \
     tests/pallas/ops_test.py \

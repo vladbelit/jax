@@ -47,7 +47,9 @@ def add_imports(doctest_namespace):
 # For TPU, the env var JAX_ENABLE_TPU_XDIST must be set for this hook to have an
 # effect. We do this to minimize any effect on non-TPU tests, and as a pointer
 # in test code to this "magic" hook. TPU tests should not specify more xdist
-# workers than the number of TPU chips.
+# workers than the number of TPU chips, unless
+# JAX_TPU_XDIST_VISIBILITY_MODE=devices is set for hosts where logical devices
+# are a finer-grained unit than chips.
 #
 # For GPU, the env var JAX_ENABLE_CUDA_XDIST must be set equal to the number of
 # CUDA devices. Test processes will be assigned in round robin fashion across
@@ -59,7 +61,20 @@ def pytest_collection() -> None:
     if not xdist_worker_name.startswith("gw"):
       return
     xdist_worker_number = int(xdist_worker_name[len("gw") :])
-    os.environ.setdefault("TPU_VISIBLE_CHIPS", str(xdist_worker_number))
+    tpu_visibility_mode = os.environ.get(
+        "JAX_TPU_XDIST_VISIBILITY_MODE", "chips"
+    )
+    if tpu_visibility_mode == "devices":
+      os.environ.setdefault("TPU_VISIBLE_DEVICES", str(xdist_worker_number))
+      os.environ.setdefault("TPU_CHIPS_PER_PROCESS_BOUNDS", "1,1,1,1")
+      os.environ.setdefault("TPU_PROCESS_BOUNDS", "1,1,1,1")
+    elif tpu_visibility_mode == "chips":
+      os.environ.setdefault("TPU_VISIBLE_CHIPS", str(xdist_worker_number))
+    else:
+      raise ValueError(
+          "JAX_TPU_XDIST_VISIBILITY_MODE must be 'chips' or 'devices'; "
+          f"got {tpu_visibility_mode!r}"
+      )
     os.environ.setdefault("ALLOW_MULTIPLE_LIBTPU_LOAD", "true")
 
   elif num_cuda_devices := os.environ.get("JAX_ENABLE_CUDA_XDIST", None):
