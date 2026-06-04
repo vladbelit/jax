@@ -95,7 +95,8 @@ for j in `seq 0 $((JAX_TESTS_PER_ACCELERATOR-1))`; do
         esac
         export CUDA_VISIBLE_DEVICES=$i
         export ROCR_VISIBLE_DEVICES=$i
-        echo "Running test $TEST_BINARY $* on accelerator $i with TPU_VISIBLE_DEVICES=${TPU_VISIBLE_DEVICES:-unset} TPU_VISIBLE_CHIPS=${TPU_VISIBLE_CHIPS:-unset}"
+        echo "Running test $TEST_BINARY $* on accelerator $i lock_slot=${i}_${j} visibility_mode=${JAX_TPU_XDIST_VISIBILITY_MODE}"
+        echo "TPU assignment: TPU_VISIBLE_DEVICES=${TPU_VISIBLE_DEVICES:-unset} TPU_VISIBLE_CHIPS=${TPU_VISIBLE_CHIPS:-unset} TPU_CHIPS_PER_PROCESS_BOUNDS=${TPU_CHIPS_PER_PROCESS_BOUNDS:-unset} TPU_PROCESS_BOUNDS=${TPU_PROCESS_BOUNDS:-unset}"
         "$TEST_BINARY" $@
       )
       return_code=$?

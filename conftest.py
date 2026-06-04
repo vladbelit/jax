@@ -14,6 +14,8 @@
 """pytest configuration"""
 
 import os
+import sys
+
 import pytest
 
 
@@ -80,6 +82,23 @@ def pytest_collection() -> None:
           f"got {tpu_visibility_mode!r}"
       )
     os.environ.setdefault("ALLOW_MULTIPLE_LIBTPU_LOAD", "true")
+    if os.environ.get("JAX_TPU_XDIST_DEBUG") == "1":
+      env_keys = (
+          "TPU_VISIBLE_DEVICES",
+          "TPU_VISIBLE_CHIPS",
+          "TPU_CHIPS_PER_PROCESS_BOUNDS",
+          "TPU_PROCESS_BOUNDS",
+          "ALLOW_MULTIPLE_LIBTPU_LOAD",
+      )
+      env_summary = " ".join(
+          f"{key}={os.environ.get(key, 'unset')}" for key in env_keys
+      )
+      print(
+          "JAX TPU xdist worker "
+          f"{xdist_worker_name}: mode={tpu_visibility_mode} {env_summary}",
+          file=sys.stderr,
+          flush=True,
+      )
 
   elif num_cuda_devices := os.environ.get("JAX_ENABLE_CUDA_XDIST", None):
     num_cuda_devices = int(num_cuda_devices)
