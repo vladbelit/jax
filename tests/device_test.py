@@ -35,10 +35,17 @@ def _device_info(device):
 
 
 def _run_tpu_core_split_diagnostic():
+  shard_status_file = os.environ.get('TEST_SHARD_STATUS_FILE')
+  if shard_status_file:
+    with open(shard_status_file, 'a', encoding='utf-8'):
+      pass
+
   print('JAX TPU core split Bazel diagnostic', flush=True)
   env_keys = (
+      'TEST_RUN_NUMBER',
       'TEST_SHARD_INDEX',
       'TEST_TOTAL_SHARDS',
+      'TEST_SHARD_STATUS_FILE',
       'TPU_VISIBLE_DEVICES',
       'TPU_VISIBLE_CHIPS',
       'TPU_CHIPS_PER_PROCESS_BOUNDS',

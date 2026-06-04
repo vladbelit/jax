@@ -118,7 +118,7 @@ function run_tpu_core_split_bazel_diagnostic() {
     --verbose_failures \
     --nocache_test_results \
     --test_output=all \
-    --test_sharding_strategy=forced=${NB_TPUS} \
+    --runs_per_test=${NB_TPUS} \
     -- \
     //tests:device_test_tpu
 
