@@ -80,6 +80,53 @@ COMMON_TPU_TEST_ENV_VARS="--test_env=TPU_SKIP_MDS_QUERY=true \
  --test_env=HOST_BOUNDS \
  --test_env=VBAR_CONTROL_SERVICE_URL"
 
+function run_tpu_core_split_bazel_diagnostic() {
+  if [[ "$TPU_XDIST_VISIBILITY_MODE" != "devices" ]]; then
+    return 0
+  fi
+
+  echo "Running TPU core-splitting Bazel diagnostic..."
+  local diagnostic_artifacts_dir="test-artifacts-diagnostic"
+  mkdir -p "$diagnostic_artifacts_dir"
+  bazel test \
+    --profile="$diagnostic_artifacts_dir/bazel_profile.json.gz" \
+    --repo_env=HERMETIC_PYTHON_VERSION="$JAXCI_HERMETIC_PYTHON_VERSION" \
+    $OVERRIDE_XLA_REPO \
+    --@rules_python//python/config_settings:py_freethreaded="$FREETHREADED_FLAG_VALUE" \
+    --config=ci_linux_x86_64 \
+    --config=ci_rbe_cache \
+    --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB \
+    --//jax:build_jax=$JAXCI_BUILD_JAX \
+    --run_under="$(pwd)/build/parallel_accelerator_execute.sh" \
+    --test_env=JAX_ACCELERATOR_COUNT=${NB_TPUS} \
+    --test_env=JAX_TESTS_PER_ACCELERATOR=${JOBS_PER_ACC} \
+    --strategy=TestRunner=local \
+    --local_test_jobs=$J \
+    --test_env=JAX_TEST_NUM_THREADS=$J \
+    --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
+    --test_env=JAX_TPU_XDIST_VISIBILITY_MODE=${TPU_XDIST_VISIBILITY_MODE} \
+    --test_env=JAX_SKIP_SLOW_TESTS=1 \
+    --test_env=JAX_ENABLE_TPU_XDIST=1 \
+    --test_env=JAX_PLATFORMS=tpu,cpu \
+    --test_env=JAX_TPU_CORE_SPLIT_DIAGNOSTIC=1 \
+    --test_env=JAX_TPU_CORE_SPLIT_DIAGNOSTIC_SLEEP=5 \
+    --test_env=TF_CPP_MIN_LOG_LEVEL=0 \
+    --test_env=TPU_STDERR_LOG_LEVEL=0 \
+    --repo_env=USE_MINIMAL_SHARD_COUNT=True \
+    $COMMON_TPU_TEST_ENV_VARS \
+    --test_tag_filters=-multiaccelerator \
+    --verbose_failures \
+    --nocache_test_results \
+    --test_output=all \
+    --test_sharding_strategy=forced=${NB_TPUS} \
+    -- \
+    //tests:device_test_tpu
+
+  local diagnostic_retval=$?
+  ci/utilities/collect_bazel_test_xmls.sh "$diagnostic_artifacts_dir"
+  return "$diagnostic_retval"
+}
+
 echo "Running Bazel TPU tests..."
 
 # Don't abort the script if one command fails to ensure we run both test
@@ -88,6 +135,9 @@ set +e
 
 # TODO(emilyaf): Debug and re-enable this test.
 IGNORE_TESTS_MULTIACCELERATOR="-//tests/multiprocess:array_test_tpu"
+
+run_tpu_core_split_bazel_diagnostic
+diagnostic_bazel_cmd_retval=$?
 
 if [[ "$JAXCI_RUN_FULL_TPU_TEST_SUITE" == "1" ]]; then
   # We're deselecting all Pallas TPU tests in the oldest libtpu build. Mosaic
@@ -214,6 +264,12 @@ if [[ -d test-artifacts-single ]]; then
     cp "$f" "test-artifacts/single_$(basename "$f")"
   done
 fi
+if [[ -d test-artifacts-diagnostic ]]; then
+  for f in test-artifacts-diagnostic/*; do
+    [[ -e "$f" ]] || continue
+    cp "$f" "test-artifacts/diagnostic_$(basename "$f")"
+  done
+fi
 if [[ -d test-artifacts-multi ]]; then
   for f in test-artifacts-multi/*; do
     [[ -e "$f" ]] || continue
@@ -223,7 +279,9 @@ fi
 set -x
 
 # Exit with failure if either command fails.
-if [[ $first_bazel_cmd_retval -ne 0 ]]; then
+if [[ $diagnostic_bazel_cmd_retval -ne 0 ]]; then
+  exit $diagnostic_bazel_cmd_retval
+elif [[ $first_bazel_cmd_retval -ne 0 ]]; then
   exit $first_bazel_cmd_retval
 elif [[ $second_bazel_cmd_retval -ne 0 ]]; then
   exit $second_bazel_cmd_retval

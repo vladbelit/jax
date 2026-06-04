@@ -122,4 +122,113 @@ PY
       return 1
     fi
   done
+
+  echo "Checking concurrent TPU_VISIBLE_DEVICES visibility..."
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local ready_dir="${tmp_dir}/ready"
+  mkdir -p "$ready_dir"
+  local -a pids=()
+  for ((i = 0; i < worker_count; i++)); do
+    (
+      env -u TPU_VISIBLE_CHIPS \
+        TPU_VISIBLE_DEVICES="$i" \
+        TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1,1 \
+        TPU_PROCESS_BOUNDS=1,1,1,1 \
+        ALLOW_MULTIPLE_LIBTPU_LOAD=true \
+        JAX_PLATFORMS="${JAX_PLATFORMS:-tpu,cpu}" \
+        TF_CPP_MIN_LOG_LEVEL=0 \
+        TPU_STDERR_LOG_LEVEL=0 \
+        JAX_TPU_CORE_SPLIT_READY_DIR="$ready_dir" \
+        JAX_TPU_CORE_SPLIT_WORKER_COUNT="$worker_count" \
+        "$python_bin" - <<'PY'
+import os
+import pathlib
+import time
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+
+def _device_info(device):
+  return {
+      'repr': repr(device),
+      'id': getattr(device, 'id', None),
+      'process_index': getattr(device, 'process_index', None),
+      'coords': getattr(device, 'coords', None),
+      'core_on_chip': getattr(device, 'core_on_chip', None),
+  }
+
+
+visible_devices = os.environ['TPU_VISIBLE_DEVICES']
+worker_count = int(os.environ['JAX_TPU_CORE_SPLIT_WORKER_COUNT'])
+ready_dir = pathlib.Path(os.environ['JAX_TPU_CORE_SPLIT_READY_DIR'])
+print('concurrent smoke TPU_VISIBLE_DEVICES:', visible_devices, flush=True)
+print('TPU_VISIBLE_CHIPS:', os.environ.get('TPU_VISIBLE_CHIPS'), flush=True)
+print(
+    'TPU_CHIPS_PER_PROCESS_BOUNDS:',
+    os.environ.get('TPU_CHIPS_PER_PROCESS_BOUNDS'),
+    flush=True,
+)
+print('TPU_PROCESS_BOUNDS:', os.environ.get('TPU_PROCESS_BOUNDS'), flush=True)
+print('default backend:', jax.default_backend(), flush=True)
+print('process count:', jax.process_count(), flush=True)
+print('process index:', jax.process_index(), flush=True)
+local_devices = jax.local_devices()
+print('local devices:', [_device_info(d) for d in local_devices], flush=True)
+if len(local_devices) != 1:
+  raise SystemExit(
+      f'Expected exactly one local TPU device; got {len(local_devices)}'
+  )
+
+
+@jax.jit
+def _compute(x):
+  return jnp.sum((x + 1.0) * (x + 2.0))
+
+
+x = jax.device_put(np.arange(16, dtype=np.float32), local_devices[0])
+result = _compute(x).block_until_ready()
+actual = float(jax.device_get(result))
+expected = float(sum((i + 1) * (i + 2) for i in range(16)))
+print('concurrent smoke compute result:', actual, flush=True)
+if actual != expected:
+  raise SystemExit(f'Expected compute result {expected}; got {actual}')
+
+(ready_dir / visible_devices).write_text('ready', encoding='utf-8')
+deadline = time.time() + 60
+while len(list(ready_dir.iterdir())) < worker_count:
+  if time.time() > deadline:
+    raise SystemExit('Timed out waiting for other TPU workers')
+  time.sleep(0.1)
+
+time.sleep(5)
+print('concurrent smoke worker finished', flush=True)
+PY
+    ) >"${tmp_dir}/worker_${i}.log" 2>&1 &
+    pids[$i]=$!
+  done
+
+  local failed=0
+  for ((i = 0; i < worker_count; i++)); do
+    if ! wait "${pids[$i]}"; then
+      failed=1
+    fi
+  done
+
+  for ((i = 0; i < worker_count; i++)); do
+    echo "=== Concurrent TPU visibility smoke check log: TPU_VISIBLE_DEVICES=$i ==="
+    if [[ -f "${tmp_dir}/worker_${i}.log" ]]; then
+      while IFS= read -r line; do
+        echo "[TPU_VISIBLE_DEVICES=$i] $line"
+      done <"${tmp_dir}/worker_${i}.log"
+    fi
+  done
+
+  rm -rf "$tmp_dir"
+  if [[ "$failed" -ne 0 ]]; then
+    echo "Concurrent TPU visibility smoke check failed"
+    return 1
+  fi
 }
