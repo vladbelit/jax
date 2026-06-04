@@ -79,8 +79,8 @@ for j in `seq 0 $((JAX_TESTS_PER_ACCELERATOR-1))`; do
           devices)
             unset TPU_VISIBLE_CHIPS
             export TPU_VISIBLE_DEVICES=$i
-            export TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1
-            export TPU_PROCESS_BOUNDS=1,1,1
+            export TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1,1
+            export TPU_PROCESS_BOUNDS=1,1,1,1
             ;;
           chips)
             unset TPU_VISIBLE_DEVICES

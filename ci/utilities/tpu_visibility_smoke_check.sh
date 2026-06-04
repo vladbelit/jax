@@ -29,8 +29,8 @@ function run_tpu_visibility_smoke_check() {
     echo "=== TPU visibility smoke check: TPU_VISIBLE_DEVICES=$i ==="
     if ! env -u TPU_VISIBLE_CHIPS \
       TPU_VISIBLE_DEVICES="$i" \
-      TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1 \
-      TPU_PROCESS_BOUNDS=1,1,1 \
+      TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1,1 \
+      TPU_PROCESS_BOUNDS=1,1,1,1 \
       ALLOW_MULTIPLE_LIBTPU_LOAD=true \
       JAX_PLATFORMS="${JAX_PLATFORMS:-tpu,cpu}" \
       "$python_bin" - <<'PY'; then
@@ -47,8 +47,18 @@ print(
 )
 print('TPU_PROCESS_BOUNDS:', os.environ.get('TPU_PROCESS_BOUNDS'))
 print('default backend:', jax.default_backend())
-print('devices:', jax.devices())
-print('local device count:', jax.local_device_count())
+devices = jax.devices()
+print('devices:', devices)
+print(
+    'device coords:',
+    [(d.id, d.coords, d.core_on_chip) for d in devices],
+)
+local_device_count = jax.local_device_count()
+print('local device count:', local_device_count)
+if local_device_count != 1:
+  raise SystemExit(
+      f'Expected exactly one local TPU device; got {local_device_count}'
+  )
 PY
       echo "TPU visibility smoke check failed for TPU_VISIBLE_DEVICES=$i"
       return 1

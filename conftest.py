@@ -67,8 +67,8 @@ def pytest_collection() -> None:
     if tpu_visibility_mode == "devices":
       os.environ.pop("TPU_VISIBLE_CHIPS", None)
       os.environ["TPU_VISIBLE_DEVICES"] = str(xdist_worker_number)
-      os.environ["TPU_CHIPS_PER_PROCESS_BOUNDS"] = "1,1,1"
-      os.environ["TPU_PROCESS_BOUNDS"] = "1,1,1"
+      os.environ["TPU_CHIPS_PER_PROCESS_BOUNDS"] = "1,1,1,1"
+      os.environ["TPU_PROCESS_BOUNDS"] = "1,1,1,1"
     elif tpu_visibility_mode == "chips":
       os.environ.pop("TPU_VISIBLE_DEVICES", None)
       os.environ.pop("TPU_CHIPS_PER_PROCESS_BOUNDS", None)
