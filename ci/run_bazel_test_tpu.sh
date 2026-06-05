@@ -50,10 +50,15 @@ fi
 NB_TPUS=$JAXCI_TPU_CORES
 JOBS_PER_ACC=1
 J=$((NB_TPUS * JOBS_PER_ACC))
+BAZEL_TEST_NUM_THREADS=$J
 
 case "${JAXCI_TPU_PARALLELISM_MODE:-chip}" in
   core)
     TPU_XDIST_VISIBILITY_MODE="devices"
+    # TODO: Revisit this before merging the TPU7x core-splitting experiment.
+    # Keep process-level parallelism, but avoid the threaded unittest runner
+    # while diagnosing Bazel-specific TPU initialization aborts.
+    BAZEL_TEST_NUM_THREADS=0
     ;;
   chip)
     TPU_XDIST_VISIBILITY_MODE="chips"
@@ -102,7 +107,7 @@ function run_tpu_core_split_bazel_diagnostic() {
     --test_env=JAX_TESTS_PER_ACCELERATOR=${JOBS_PER_ACC} \
     --strategy=TestRunner=local \
     --local_test_jobs=$J \
-    --test_env=JAX_TEST_NUM_THREADS=$J \
+    --test_env=JAX_TEST_NUM_THREADS=$BAZEL_TEST_NUM_THREADS \
     --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
     --test_env=JAX_TPU_XDIST_VISIBILITY_MODE=${TPU_XDIST_VISIBILITY_MODE} \
     --test_env=JAX_SKIP_SLOW_TESTS=1 \
@@ -184,7 +189,7 @@ if [[ "$JAXCI_RUN_FULL_TPU_TEST_SUITE" == "1" ]]; then
       --test_env=JAX_TESTS_PER_ACCELERATOR=${JOBS_PER_ACC} \
       --strategy=TestRunner=local \
       --local_test_jobs=$J \
-      --test_env=JAX_TEST_NUM_THREADS=$J \
+      --test_env=JAX_TEST_NUM_THREADS=$BAZEL_TEST_NUM_THREADS \
       --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
       --test_env=JAX_TPU_XDIST_VISIBILITY_MODE=${TPU_XDIST_VISIBILITY_MODE} \
       --test_env=JAX_SKIP_SLOW_TESTS=1 \
@@ -228,7 +233,7 @@ else
     --test_env=JAX_TESTS_PER_ACCELERATOR=${JOBS_PER_ACC} \
     --strategy=TestRunner=local \
     --local_test_jobs=$J \
-    --test_env=JAX_TEST_NUM_THREADS=$J \
+    --test_env=JAX_TEST_NUM_THREADS=$BAZEL_TEST_NUM_THREADS \
     --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
     --test_env=JAX_TPU_XDIST_VISIBILITY_MODE=${TPU_XDIST_VISIBILITY_MODE} \
     --test_env=JAX_SKIP_SLOW_TESTS=1 \
