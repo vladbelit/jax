@@ -15,14 +15,6 @@
 import os
 import time
 
-from absl.testing import absltest
-import jax
-import jax.numpy as jnp
-from jax._src import test_util as jtu
-import numpy as np
-
-jax.config.parse_flags_with_absl()
-
 
 def _device_info(device):
   return {
@@ -35,6 +27,10 @@ def _device_info(device):
 
 
 def _run_tpu_core_split_diagnostic():
+  import jax
+  import jax.numpy as jnp
+  import numpy as np
+
   shard_status_file = os.environ.get('TEST_SHARD_STATUS_FILE')
   if shard_status_file:
     with open(shard_status_file, 'a', encoding='utf-8'):
@@ -51,6 +47,18 @@ def _run_tpu_core_split_diagnostic():
       'TPU_CHIPS_PER_PROCESS_BOUNDS',
       'TPU_PROCESS_BOUNDS',
       'JAX_PLATFORMS',
+      'TPU_TOPOLOGY',
+      'TPU_TOPOLOGY_ALT',
+      'TPU_TOPOLOGY_WRAP',
+      'TPU_WORKER_ID',
+      'TPU_CHIPS_PER_HOST_BOUNDS',
+      'TPU_HOST_BOUNDS',
+      'CHIPS_PER_HOST_BOUNDS',
+      'HOST_BOUNDS',
+      'TPU_WORKER_HOSTNAMES',
+      'TPU_ACCELERATOR_TYPE',
+      'TPU_RUNTIME_METRICS_PORTS',
+      'VBAR_CONTROL_SERVICE_URL',
   )
   for key in env_keys:
     print(f'{key}: {os.environ.get(key)}', flush=True)
@@ -78,6 +86,18 @@ def _run_tpu_core_split_diagnostic():
     raise SystemExit(f'Expected compute result {expected}; got {actual}')
   time.sleep(float(os.environ.get('JAX_TPU_CORE_SPLIT_DIAGNOSTIC_SLEEP', '5')))
   print('JAX TPU core split Bazel diagnostic finished', flush=True)
+
+
+if os.environ.get('JAX_TPU_CORE_SPLIT_DIAGNOSTIC') == '1':
+  _run_tpu_core_split_diagnostic()
+  raise SystemExit(0)
+
+
+from absl.testing import absltest
+import jax
+from jax._src import test_util as jtu
+
+jax.config.parse_flags_with_absl()
 
 
 class DeviceTest(jtu.JaxTestCase):
@@ -122,7 +142,4 @@ class DeviceTest(jtu.JaxTestCase):
 
 
 if __name__ == '__main__':
-  if os.environ.get('JAX_TPU_CORE_SPLIT_DIAGNOSTIC') == '1':
-    _run_tpu_core_split_diagnostic()
-    raise SystemExit(0)
   absltest.main(testLoader=jtu.JaxTestLoader())

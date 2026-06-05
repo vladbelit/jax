@@ -118,9 +118,15 @@ function run_tpu_core_split_bazel_diagnostic() {
     --verbose_failures \
     --nocache_test_results \
     --test_output=all \
-    --runs_per_test=${NB_TPUS} \
     -- \
-    //tests:device_test_tpu
+    //tests:api_util_test_tpu \
+    //tests:cache_key_test_tpu \
+    //tests:debug_info_test_tpu \
+    //tests:device_test_tpu \
+    //tests:error_check_test_tpu \
+    //tests:fused_test_tpu \
+    //tests:jax_numpy_error_test_tpu \
+    //tests:transfer_guard_test_tpu
 
   local diagnostic_retval=$?
   ci/utilities/collect_bazel_test_xmls.sh "$diagnostic_artifacts_dir"
@@ -151,45 +157,53 @@ if [[ "$JAXCI_RUN_FULL_TPU_TEST_SUITE" == "1" ]]; then
     IGNORE_TESTS="-//tests/pallas:tpu_pallas_interpret_thread_map_test_tpu"
   fi
 
-  # TODO: Restore the full TPU Bazel suite before merging the
-  # TPU7x core-splitting experiment. This is temporarily narrowed to targets
-  # from the last scheduled continuous TPU7x run to keep diagnostic logs
-  # readable.
-  TEST_ARTIFACTS_DIR="test-artifacts-single"
-  mkdir -p "$TEST_ARTIFACTS_DIR"
-  bazel test \
-    --profile="$TEST_ARTIFACTS_DIR/bazel_profile.json.gz" \
-    --repo_env=HERMETIC_PYTHON_VERSION="$JAXCI_HERMETIC_PYTHON_VERSION" \
-    $OVERRIDE_XLA_REPO \
-    --@rules_python//python/config_settings:py_freethreaded="$FREETHREADED_FLAG_VALUE" \
-    --config=ci_linux_x86_64 \
-    --config=ci_rbe_cache \
-    --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB \
-    --//jax:build_jax=$JAXCI_BUILD_JAX \
-    --run_under="$(pwd)/build/parallel_accelerator_execute.sh" \
-    --test_env=JAX_ACCELERATOR_COUNT=${NB_TPUS} \
-    --test_env=JAX_TESTS_PER_ACCELERATOR=${JOBS_PER_ACC} \
-    --strategy=TestRunner=local \
-    --local_test_jobs=$J \
-    --test_env=JAX_TEST_NUM_THREADS=$J \
-    --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
-    --test_env=JAX_TPU_XDIST_VISIBILITY_MODE=${TPU_XDIST_VISIBILITY_MODE} \
-    --test_env=JAX_SKIP_SLOW_TESTS=1 \
-    --test_env=JAX_ENABLE_TPU_XDIST=1 \
-    --test_env=JAX_PLATFORMS=tpu,cpu \
-    --repo_env=USE_MINIMAL_SHARD_COUNT=True \
-    $COMMON_TPU_TEST_ENV_VARS \
-    --test_tag_filters=-multiaccelerator \
-    --verbose_failures \
-    --test_output=errors \
-    -- \
-    //tests/pallas:ops_test_tpu \
-    //tests/pallas:tpu_ops_test_tpu \
-    $IGNORE_TESTS
+  if [[ "$TPU_XDIST_VISIBILITY_MODE" == "devices" ]]; then
+    # TODO: Restore the full TPU Bazel suite before merging the
+    # TPU7x core-splitting experiment. The two narrowed Pallas targets are
+    # currently noisy, so the core-split signal comes from the diagnostic above.
+    echo "Skipping narrowed Pallas Bazel targets for TPU core-splitting diagnostic."
+    first_bazel_cmd_retval=0
+  else
+    # TODO: Restore the full TPU Bazel suite before merging the
+    # TPU7x core-splitting experiment. This is temporarily narrowed to targets
+    # from the last scheduled continuous TPU7x run to keep diagnostic logs
+    # readable.
+    TEST_ARTIFACTS_DIR="test-artifacts-single"
+    mkdir -p "$TEST_ARTIFACTS_DIR"
+    bazel test \
+      --profile="$TEST_ARTIFACTS_DIR/bazel_profile.json.gz" \
+      --repo_env=HERMETIC_PYTHON_VERSION="$JAXCI_HERMETIC_PYTHON_VERSION" \
+      $OVERRIDE_XLA_REPO \
+      --@rules_python//python/config_settings:py_freethreaded="$FREETHREADED_FLAG_VALUE" \
+      --config=ci_linux_x86_64 \
+      --config=ci_rbe_cache \
+      --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB \
+      --//jax:build_jax=$JAXCI_BUILD_JAX \
+      --run_under="$(pwd)/build/parallel_accelerator_execute.sh" \
+      --test_env=JAX_ACCELERATOR_COUNT=${NB_TPUS} \
+      --test_env=JAX_TESTS_PER_ACCELERATOR=${JOBS_PER_ACC} \
+      --strategy=TestRunner=local \
+      --local_test_jobs=$J \
+      --test_env=JAX_TEST_NUM_THREADS=$J \
+      --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
+      --test_env=JAX_TPU_XDIST_VISIBILITY_MODE=${TPU_XDIST_VISIBILITY_MODE} \
+      --test_env=JAX_SKIP_SLOW_TESTS=1 \
+      --test_env=JAX_ENABLE_TPU_XDIST=1 \
+      --test_env=JAX_PLATFORMS=tpu,cpu \
+      --repo_env=USE_MINIMAL_SHARD_COUNT=True \
+      $COMMON_TPU_TEST_ENV_VARS \
+      --test_tag_filters=-multiaccelerator \
+      --verbose_failures \
+      --test_output=errors \
+      -- \
+      //tests/pallas:ops_test_tpu \
+      //tests/pallas:tpu_ops_test_tpu \
+      $IGNORE_TESTS
 
-  # Store the return value of the first bazel command.
-  first_bazel_cmd_retval=$?
-  ci/utilities/collect_bazel_test_xmls.sh "$TEST_ARTIFACTS_DIR"
+    # Store the return value of the first bazel command.
+    first_bazel_cmd_retval=$?
+    ci/utilities/collect_bazel_test_xmls.sh "$TEST_ARTIFACTS_DIR"
+  fi
 
   # TODO: Re-enable multi-accelerator Bazel before merging. It is
   # disabled while debugging TPU7x single-worker visibility so unrelated
