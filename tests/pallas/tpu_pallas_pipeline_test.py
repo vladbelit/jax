@@ -1495,34 +1495,35 @@ def matmul(x: jax.Array, y: jax.Array, *, bm: int, bk: int, bn: int):
   )(x, y)
 
 
-_PADDED_MATMUL_BM_CHOICES = (8, 16, 32, 128, 256, 512)
-_PADDED_MATMUL_BK_BN_CHOICES = (128, 256, 512)
-
-
-@hps.composite
-def _padded_matmul_case(draw, *, min_bm):
-  bm = draw(
-      hps.sampled_from([
-          block_size
-          for block_size in _PADDED_MATMUL_BM_CHOICES
-          if block_size >= min_bm
-      ])
-  )
-  bk = draw(hps.sampled_from(_PADDED_MATMUL_BK_BN_CHOICES))
-  bn = draw(hps.sampled_from(_PADDED_MATMUL_BK_BN_CHOICES))
-
-  # Draw the block sizes first so every matrix is large enough to contain them.
-  # The dimensions need not be multiples of the blocks, which preserves coverage
-  # of the padded cases this test is intended to exercise.
-  m = draw(hps.integers(min_value=bm, max_value=1024))
-  k = draw(hps.integers(min_value=bk, max_value=1024))
-  n = draw(hps.integers(min_value=bn, max_value=1024))
-  seed = draw(hps.integers(0, 4))
-  return m, k, n, bm, bk, bn, seed
-
-
 @jtu.thread_unsafe_test_class(condition=not htu.hypothesis_is_thread_safe())
 class PaddedPipelineEmitterTest(htu.HypothesisShardedTestCase):
+
+  _BM_CHOICES = (8, 16, 32, 128, 256, 512)
+  _BK_BN_CHOICES = (128, 256, 512)
+
+  @staticmethod
+  @hps.composite
+  def _padded_matmul_case(draw, *, min_bm):
+    bm_choices = PaddedPipelineEmitterTest._BM_CHOICES
+    bk_bn_choices = PaddedPipelineEmitterTest._BK_BN_CHOICES
+    bm = draw(
+        hps.sampled_from([
+            block_size
+            for block_size in bm_choices
+            if block_size >= min_bm
+        ])
+    )
+    bk = draw(hps.sampled_from(bk_bn_choices))
+    bn = draw(hps.sampled_from(bk_bn_choices))
+
+    # Draw the block sizes first so every matrix is large enough to contain them.
+    # The dimensions need not be multiples of the blocks, which preserves coverage
+    # of the padded cases this test is intended to exercise.
+    m = draw(hps.integers(min_value=bm, max_value=1024))
+    k = draw(hps.integers(min_value=bk, max_value=1024))
+    n = draw(hps.integers(min_value=bn, max_value=1024))
+    seed = draw(hps.integers(0, 4))
+    return m, k, n, bm, bk, bn, seed
 
   def setUp(self):
     super().setUp()
