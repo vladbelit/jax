@@ -90,6 +90,12 @@ else
     rbe_config=rbe_${os}_${arch}
 fi
 
+portserver_test_env=""
+if [[ -n "$test_strategy" ]]; then
+  PYTHON_BIN="$JAXCI_PYTHON" source ci/utilities/setup_portserver.sh
+  portserver_test_env="--test_env=PORTSERVER_ADDRESS=@unittest-portserver"
+fi
+
 TEST_ARTIFACTS_DIR="test-artifacts"
 mkdir -p "$TEST_ARTIFACTS_DIR"
 echo "::endgroup::" >&2
@@ -108,6 +114,7 @@ bazel $bazel_output_base $JAXCI_BAZEL_CPU_RBE_MODE \
     --//jax:build_jaxlib=$JAXCI_BUILD_JAXLIB \
     --//jax:build_jax=$JAXCI_BUILD_JAX \
     $test_strategy \
+    $portserver_test_env \
     --test_env=JAX_NUM_GENERATED_CASES=25 \
     --test_env=JAX_SKIP_SLOW_TESTS=true \
     --action_env=JAX_ENABLE_X64="$JAXCI_ENABLE_X64" \
