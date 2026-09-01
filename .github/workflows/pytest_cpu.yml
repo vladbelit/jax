@@ -76,6 +76,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          # actions/checkout invokes Git from Node; without this, MSYS rewrites
+          # its `^{object}` suffix and makes valid commit SHAs appear missing.
+          MSYS: noglob
         with:
           ref: ${{ inputs.git_commit }}
           persist-credentials: false
