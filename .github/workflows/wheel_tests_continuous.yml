@@ -130,12 +130,12 @@ jobs:
         env:
           # Temporary staging: make every non-TPU and non-probe job unreachable.
           INPUT_PLATFORMS: tpu
-          INPUT_SUITES: pytest,bazel
+          INPUT_SUITES: bazel
           INPUT_XLA_TRACK: pinned
           INPUT_XLA_COMMIT: ""
           INPUT_HALT_FOR_CONNECTION: ${{ github.event.inputs['halt-for-connection'] || 'none' }}
           INPUT_RUN_BUILD_BAZEL: ${{ needs.check-trigger.outputs.run-build-bazel }}
-          INPUT_RUN_PYTEST: ${{ needs.check-trigger.outputs.run-pytest }}
+          INPUT_RUN_PYTEST: "false"
         run: python3 .github/workflows/scripts/select_continuous_wheel_test_jobs.py
 
   build-jax-artifact:
@@ -430,69 +430,68 @@ jobs:
         fail-fast: false # don't cancel all jobs on failure
         matrix:
           probe:
-            - name: "v7x-tpu-device"
-              runner: "linux-x86-tpu7x-224-4tpu"
-              cores: "4"
-              tpu-type: "v7x-8"
-              python: "3.12"
-              target: "//tests/multiprocess:tpu_device_test_tpu"
-              kind: "multiprocess"
-              runs: "5"
-              test-threads: "0"
-            - name: "v7x-host-callback"
-              runner: "linux-x86-tpu7x-224-4tpu"
-              cores: "4"
-              tpu-type: "v7x-8"
-              python: "3.12"
-              target: "//tests/multiprocess:host_callback_test_tpu"
-              kind: "multiprocess"
-              runs: "5"
-              test-threads: "0"
-            - name: "v7x-thread-guard"
-              runner: "linux-x86-tpu7x-224-4tpu"
-              cores: "4"
-              tpu-type: "v7x-8"
-              python: "3.12"
-              target: "//tests/multiprocess:thread_guard_test_tpu"
-              kind: "multiprocess"
-              runs: "5"
-              test-threads: "0"
-            - name: "v7x-lax-py315"
-              runner: "linux-x86-tpu7x-224-4tpu"
-              cores: "4"
-              tpu-type: "v7x-8"
-              python: "3.15"
-              target: "//tests:lax_test_tpu"
+            - name: "dtypes-full-baseline"
+              runner: "linux-x86-ct5lp-224-8tpu"
+              cores: "8"
+              tpu-type: "v5e-8"
+              python: "3.15t"
+              target: "//tests:dtypes_test_tpu"
               kind: "single"
-              runs: "1"
               test-threads: "32"
-            - name: "v5e-dtypes-py315t-threads32"
+            - name: "dtypes-stuck-block"
               runner: "linux-x86-ct5lp-224-8tpu"
               cores: "8"
               tpu-type: "v5e-8"
               python: "3.15t"
               target: "//tests:dtypes_test_tpu"
               kind: "single"
-              runs: "1"
               test-threads: "32"
-            - name: "v5e-dtypes-py315t-threads1"
+              test-filter: >-
+                ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
+            - name: "dtypes-device-warmup"
               runner: "linux-x86-ct5lp-224-8tpu"
               cores: "8"
               tpu-type: "v5e-8"
               python: "3.15t"
               target: "//tests:dtypes_test_tpu"
               kind: "single"
-              runs: "1"
-              test-threads: "1"
-            - name: "v5e-dtypes-py315t-threads0"
+              test-threads: "32"
+              test-filter: >-
+                ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
+              warmup: "devices"
+            - name: "dtypes-gil-enabled"
               runner: "linux-x86-ct5lp-224-8tpu"
               cores: "8"
               tpu-type: "v5e-8"
               python: "3.15t"
               target: "//tests:dtypes_test_tpu"
               kind: "single"
-              runs: "1"
-              test-threads: "0"
+              test-threads: "32"
+              test-filter: >-
+                ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
+              python-gil: "1"
+            - name: "dtypes-gc-disabled"
+              runner: "linux-x86-ct5lp-224-8tpu"
+              cores: "8"
+              tpu-type: "v5e-8"
+              python: "3.15t"
+              target: "//tests:dtypes_test_tpu"
+              kind: "single"
+              test-threads: "32"
+              test-filter: >-
+                ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
+              disable-gc: "1"
+            - name: "dtypes-cpu-backend"
+              runner: "linux-x86-ct5lp-224-8tpu"
+              cores: "8"
+              tpu-type: "v5e-8"
+              python: "3.15t"
+              target: "//tests:dtypes_test_cpu"
+              kind: "local"
+              test-threads: "32"
+              test-filter: >-
+                ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
+              platforms: "cpu"
     name: "Bazel TPU probe (${{ matrix.probe.name }})"
     with:
       runner: ${{ matrix.probe.runner }}
@@ -504,8 +503,14 @@ jobs:
       probe-name: ${{ matrix.probe.name }}
       probe-target: ${{ matrix.probe.target }}
       probe-kind: ${{ matrix.probe.kind }}
-      probe-runs: ${{ matrix.probe.runs }}
+      probe-runs: "1"
       probe-test-threads: ${{ matrix.probe.test-threads }}
+      probe-test-filter: ${{ matrix.probe.test-filter || '' }}
+      probe-python-gil: ${{ matrix.probe.python-gil || '' }}
+      probe-warmup: ${{ matrix.probe.warmup || '' }}
+      probe-disable-gc: ${{ matrix.probe.disable-gc || '0' }}
+      probe-platforms: ${{ matrix.probe.platforms || 'tpu,cpu' }}
+      probe-timeout: "120"
       build_jaxlib: "wheel"
       build_jax: "wheel"
       clone_main_xla: ${{ needs.select-jobs.outputs.clone_main_xla }}

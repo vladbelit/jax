@@ -118,11 +118,62 @@ if [[ -n "${JAXCI_TPU_PROBE_TARGET:-}" ]]; then
         "--test_tag_filters=multiaccelerator"
       )
       ;;
+    local)
+      PROBE_MODE_ARGS=(
+        "--local_test_jobs=1"
+        "--test_tag_filters=-multiaccelerator"
+      )
+      ;;
     *)
       echo "Unknown TPU probe kind: $JAXCI_TPU_PROBE_KIND" >&2
       exit 2
       ;;
   esac
+
+  case "$JAXCI_TPU_PROBE_PYTHON_GIL" in
+    ""|0|1) ;;
+    *)
+      echo "Unknown PYTHON_GIL probe value: $JAXCI_TPU_PROBE_PYTHON_GIL" >&2
+      exit 2
+      ;;
+  esac
+
+  case "$JAXCI_TPU_PROBE_WARMUP" in
+    ""|devices) ;;
+    *)
+      echo "Unknown TPU probe warm-up: $JAXCI_TPU_PROBE_WARMUP" >&2
+      exit 2
+      ;;
+  esac
+
+  case "$JAXCI_TPU_PROBE_DISABLE_GC" in
+    0|1) ;;
+    *)
+      echo "Unknown TPU probe GC setting: $JAXCI_TPU_PROBE_DISABLE_GC" >&2
+      exit 2
+      ;;
+  esac
+
+  PROBE_ENV_ARGS=(
+    "--test_env=JAXCI_TPU_PROBE_ACTIVE=1"
+    "--test_env=JAXCI_TPU_PROBE_WARMUP=$JAXCI_TPU_PROBE_WARMUP"
+    "--test_env=JAXCI_TPU_PROBE_DISABLE_GC=$JAXCI_TPU_PROBE_DISABLE_GC"
+  )
+  if [[ -n "$JAXCI_TPU_PROBE_TEST_FILTER" ]]; then
+    PROBE_ENV_ARGS+=("--test_env=JAX_TEST_TARGETS=$JAXCI_TPU_PROBE_TEST_FILTER")
+  fi
+  if [[ -n "$JAXCI_TPU_PROBE_PYTHON_GIL" ]]; then
+    PROBE_ENV_ARGS+=("--test_env=PYTHON_GIL=$JAXCI_TPU_PROBE_PYTHON_GIL")
+  fi
+
+  PROBE_TIMEOUT_ARGS=()
+  if [[ -n "$JAXCI_TPU_PROBE_TIMEOUT" ]]; then
+    if [[ ! "$JAXCI_TPU_PROBE_TIMEOUT" =~ ^[0-9]+$ ]]; then
+      echo "Invalid TPU probe timeout: $JAXCI_TPU_PROBE_TIMEOUT" >&2
+      exit 2
+    fi
+    PROBE_TIMEOUT_ARGS+=("--test_timeout=$JAXCI_TPU_PROBE_TIMEOUT")
+  fi
 
   bazel "${BAZEL_STARTUP_ARGS[@]}" test \
     --invocation_id="$INVOCATION_ID_PROBE" \
@@ -140,10 +191,12 @@ if [[ -n "${JAXCI_TPU_PROBE_TARGET:-}" ]]; then
     --test_env=ALLOW_MULTIPLE_LIBTPU_LOAD=true \
     --test_env=JAX_SKIP_SLOW_TESTS=1 \
     --test_env=JAX_ENABLE_TPU_XDIST=1 \
-    --test_env=JAX_PLATFORMS=tpu,cpu \
+    --test_env=JAX_PLATFORMS="$JAXCI_TPU_PROBE_PLATFORMS" \
     --test_env=JAX_TEST_NUM_THREADS="$JAXCI_TPU_PROBE_TEST_THREADS" \
+    "${PROBE_ENV_ARGS[@]}" \
     $COMMON_TPU_TEST_ENV_VARS \
     --runs_per_test="$JAXCI_TPU_PROBE_RUNS" \
+    "${PROBE_TIMEOUT_ARGS[@]}" \
     --cache_test_results=no \
     --verbose_failures \
     --test_output=all \
@@ -155,6 +208,19 @@ if [[ -n "${JAXCI_TPU_PROBE_TARGET:-}" ]]; then
   echo "::endgroup::" >&2
   python3 ci/utilities/report_resultstore_link.py "TPU focused probe" "$INVOCATION_ID_PROBE" "${first_bazel_cmd_retval:-0}"
   ci/utilities/collect_bazel_test_xmls.sh "$TEST_ARTIFACTS_DIR"
+
+  if [[ "$JAXCI_TPU_PROBE_TARGET" == //*:* ]]; then
+    probe_label=${JAXCI_TPU_PROBE_TARGET#//}
+    probe_package=${probe_label%%:*}
+    probe_name=${probe_label#*:}
+    probe_testlogs_dir=$(bazel "${BAZEL_STARTUP_ARGS[@]}" info bazel-testlogs 2>/dev/null)
+    probe_test_log="$probe_testlogs_dir/$probe_package/$probe_name/test.log"
+    if [[ -f "$probe_test_log" ]]; then
+      cp "$probe_test_log" "$TEST_ARTIFACTS_DIR/bazel-test.log"
+    else
+      echo "Focused probe test log not found: $probe_test_log" >&2
+    fi
+  fi
 elif [[ "$JAXCI_RUN_FULL_TPU_TEST_SUITE" == "1" ]]; then
   IGNORE_TESTS="-//tests/pallas:tpu_pallas_interpret_thread_map_test_tpu"
 
