@@ -430,15 +430,7 @@ jobs:
         fail-fast: false # don't cancel all jobs on failure
         matrix:
           probe:
-            - name: "dtypes-full-baseline"
-              runner: "linux-x86-ct5lp-224-8tpu"
-              cores: "8"
-              tpu-type: "v5e-8"
-              python: "3.15t"
-              target: "//tests:dtypes_test_tpu"
-              kind: "single"
-              test-threads: "32"
-            - name: "dtypes-stuck-block"
+            - name: "dtypes-rc2-tpu"
               runner: "linux-x86-ct5lp-224-8tpu"
               cores: "8"
               tpu-type: "v5e-8"
@@ -448,40 +440,7 @@ jobs:
               test-threads: "32"
               test-filter: >-
                 ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
-            - name: "dtypes-device-warmup"
-              runner: "linux-x86-ct5lp-224-8tpu"
-              cores: "8"
-              tpu-type: "v5e-8"
-              python: "3.15t"
-              target: "//tests:dtypes_test_tpu"
-              kind: "single"
-              test-threads: "32"
-              test-filter: >-
-                ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
-              warmup: "devices"
-            - name: "dtypes-gil-enabled"
-              runner: "linux-x86-ct5lp-224-8tpu"
-              cores: "8"
-              tpu-type: "v5e-8"
-              python: "3.15t"
-              target: "//tests:dtypes_test_tpu"
-              kind: "single"
-              test-threads: "32"
-              test-filter: >-
-                ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
-              python-gil: "1"
-            - name: "dtypes-gc-disabled"
-              runner: "linux-x86-ct5lp-224-8tpu"
-              cores: "8"
-              tpu-type: "v5e-8"
-              python: "3.15t"
-              target: "//tests:dtypes_test_tpu"
-              kind: "single"
-              test-threads: "32"
-              test-filter: >-
-                ^(?:DtypesTest\.(?:testArrayCasts|testBinaryPromotion_swap=.*|testDefaultTypes_type=.*|testEnumPromotion|testScalarCastInsideJitWorks|testScalarInstantiation[0-4]|test_check_dtype_array)|EArrayTest\.test_extended_dtypes_at_rest[01]|ExtendedDTypeTest\.(?:test_custom_tangent_dtype(?:_with_scan)?|test_edtype_conversion(?:[0-8]|_autodiff|_errors)))$
-              disable-gc: "1"
-            - name: "dtypes-cpu-backend"
+            - name: "dtypes-rc2-cpu"
               runner: "linux-x86-ct5lp-224-8tpu"
               cores: "8"
               tpu-type: "v5e-8"
@@ -506,9 +465,6 @@ jobs:
       probe-runs: "1"
       probe-test-threads: ${{ matrix.probe.test-threads }}
       probe-test-filter: ${{ matrix.probe.test-filter || '' }}
-      probe-python-gil: ${{ matrix.probe.python-gil || '' }}
-      probe-warmup: ${{ matrix.probe.warmup || '' }}
-      probe-disable-gc: ${{ matrix.probe.disable-gc || '0' }}
       probe-platforms: ${{ matrix.probe.platforms || 'tpu,cpu' }}
       probe-timeout: "120"
       build_jaxlib: "wheel"
